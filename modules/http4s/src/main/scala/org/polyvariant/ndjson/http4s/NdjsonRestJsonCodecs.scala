@@ -57,6 +57,7 @@ private object NdjsonRestJsonCodecs {
     .configureJsoniterCodecCompiler(_.withHintMask(NdjsonRestJson.protocol.hintMask))
 
   val encoders = jsonCodecs.encoders
+  val decoders = jsonCodecs.decoders
 
   /** smithy4s clients discriminate a union of declared errors by header before falling back to the
     * body, so both spellings are sent — `X-Amzn-Errortype` is what Amazon-issued generators read.

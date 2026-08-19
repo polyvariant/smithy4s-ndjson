@@ -91,6 +91,40 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
             case other           => IO.pure((FallibleOutput(other), Stream.empty))
           }
 
+      /** Collects the NDJSON commands it was handed, so a test can tell the request body was
+        * decoded line-by-line rather than read as bytes.
+        */
+      def ingest() =
+        commands =>
+          commands
+            .compile
+            .toList
+            .map(cs => (IngestOutput(applied = cs.size), Stream.empty))
+
+      /** Writes raw bytes out, so the response framing can be checked against a `@streaming blob`
+        * rather than a union.
+        */
+      def download(name: String) =
+        _ =>
+          IO.pure(
+            (
+              DownloadOutput(downloadName = Some(name)),
+              Stream.emits(s"contents of $name".getBytes("UTF-8")).map(Payload(_)),
+            )
+          )
+
+      /** Raw in and raw out: echoes the request body back verbatim, upper-cased so the test can
+        * tell the bytes made the whole round trip rather than being passed through untouched.
+        */
+      def relay() =
+        body =>
+          IO.pure(
+            (
+              RelayOutput(),
+              body.map(p => Payload(p.value.toChar.toUpper.toByte)),
+            )
+          )
+
       /** Echoes the path label back, proving metadata is still decoded when the body is streamed.
         */
       def tagged(tag: String, source: Option[String]) =
@@ -232,6 +266,72 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       expect(header(response, "X-Tag-Echo").contains("UPSTREAM")) &&
       // The framing is the protocol's call, so it wins over anything the envelope binds.
       expect(response.contentType.map(_.mediaType).contains(Ndjson.mediaType))
+    }
+  }
+
+  test("a streamed union input is decoded from NDJSON, one value per line") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/ingest"))
+        .withEntity(
+          """{"add":{"key":"a"}}
+            |{"add":{"key":"b"}}
+            |{"remove":{"key":"a"}}
+            |""".stripMargin
+        )
+    ).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.Ok) &&
+        expect(clue(body) == """{"applied":3}""")
+      }
+    }
+  }
+
+  // The trailing newline `Ndjson.encode` writes must not read back as an extra element, or a
+  // round trip through this protocol would gain one on every hop.
+  test("a trailing newline on a streamed union input does not decode as an extra element") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/ingest"))
+        .withEntity("""{"add":{"key":"only"}}\n""")
+    ).flatMap { response =>
+      bodyText(response).map(body => expect(clue(body) == """{"applied":1}"""))
+    }
+  }
+
+  test("a malformed NDJSON line fails the request rather than truncating the stream") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/ingest"))
+        .withEntity("""{"add":{"key":"a"}}
+                      |not json
+                      |""".stripMargin)
+    ).attempt.map(result => expect(result.isLeft))
+  }
+
+  test("a streamed blob output is written verbatim, as octet-stream") {
+    run(Request[IO](Method.GET, Uri.unsafeFromString("/download/report.txt"))).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.Ok) &&
+        expect(
+          response
+            .contentType
+            .map(_.mediaType)
+            .contains(org.http4s.MediaType.application.`octet-stream`)
+        ) &&
+        // Raw framing, so no NDJSON newline is appended.
+        expect(clue(body) == "contents of report.txt") &&
+        expect(header(response, "X-Download-Name").contains("report.txt"))
+      }
+    }
+  }
+
+  test("an operation may stream raw bytes in and out at once") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/relay"))
+        .withEntity("hello")
+    ).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.Ok) &&
+        expect(clue(body) == "HELLO")
+      }
     }
   }
 
