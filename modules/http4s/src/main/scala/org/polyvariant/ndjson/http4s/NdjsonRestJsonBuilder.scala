@@ -79,10 +79,10 @@ object NdjsonRestJsonBuilder {
 
   /** Builds routes for `impl`, with `middleware` applied per endpoint.
     *
-    * `middleware` is the only extension point, and it is deliberately the whole of it: gating
-    * (roles, authentication), tracing and error mapping are all caller concerns applied on top,
-    * reading whatever they need from the endpoint's own hints. The protocol itself knows about none
-    * of them.
+    * `middleware` is the only extension point, and it is deliberately the whole of it. Whatever a
+    * caller needs to wrap around an operation — tracing, metrics, error mapping, authorization,
+    * rate limiting — goes here, reading whatever it needs from the endpoint's own hints. The
+    * protocol itself knows about none of them.
     *
     * It is a `ServerEndpointMiddleware[F]` — the same type `SimpleRestJsonBuilder` takes — so
     * middleware written for one builder works unchanged with the other. As there, it wraps the
@@ -230,12 +230,17 @@ object NdjsonRestJsonBuilder {
     * Codegen renders such a blob as `bijection(byte, ...)`, so the wrapper is the bijection itself.
     * An operation whose streamed input is anything else is a protocol error, and is reported as one
     * rather than being coerced.
+    *
+    * The nested match on the primitive's own tag is what makes this typecheck without a cast:
+    * `Primitive` is a GADT, so matching `PByte` refines the bijection's source type to `Byte`
+    * within the branch. Asking `underlying.isPrimitive(PByte)` in a guard instead would answer the
+    * same question at runtime while telling the compiler nothing, leaving the `Byte` to be forced
+    * in by hand.
     */
   private def byteWrapper[SI](schema: Schema[SI]): Byte => SI =
     schema match {
-      case Schema.BijectionSchema(underlying, bijection)
-          if underlying.isPrimitive(Primitive.PByte) =>
-        byte => bijection(byte.asInstanceOf)
+      case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
+        bijection.apply
       case other =>
         throw new IllegalArgumentException(
           s"${other.shapeId} is used as a streamed input but is not a blob; the " +

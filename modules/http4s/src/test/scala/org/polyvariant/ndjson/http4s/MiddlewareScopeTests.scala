@@ -38,7 +38,7 @@ import weaver.SimpleIOSuite
   * A response body is drained by the server after the handler has returned, so an `IOLocal` set by
   * middleware is already out of scope by then. These tests record the value at both points and
   * assert on the difference, so a change that alters the answer fails here rather than silently in
-  * a caller's authorization check.
+  * whatever a caller reads that state for.
   *
   * The observation itself goes through a `Ref`, not an `IOLocal`: locals are fiber-local, so a
   * write made inside the response stream would not be visible to the asserting fiber at all.
@@ -73,8 +73,8 @@ object MiddlewareScopeTests extends SimpleIOSuite {
         def upload() = _ => IO.pure((UploadOutput(), Stream.empty))
       }
 
-    // Stands in for an auth middleware: sets a request-scoped value, then clears it once the
-    // handler returns — exactly what an `IOLocal`-based scope does at the end of a request.
+    // Stands in for any request-scoped middleware: sets a value, then clears it once the handler
+    // returns — exactly what an `IOLocal`-based scope does at the end of a request.
     val scoped: ServerEndpointMiddleware[IO] =
       new ServerEndpointMiddleware.Simple[IO] {
         def prepareWithHints(

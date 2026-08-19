@@ -18,9 +18,10 @@ namespace org.polyvariant.ndjson
 ///   Such unions are expected to have a terminal member (e.g. `completed` /
 ///   `failed`); the protocol does not enforce this.
 ///
-/// Authorization is deliberately NOT part of this protocol. Gating an endpoint
-/// (by role or otherwise) is the caller's concern, applied on top as an
-/// `Endpoint.Middleware`, so services carrying such traits are free to do so.
+/// Cross-cutting concerns are deliberately NOT part of this protocol —
+/// authorization, tracing, metrics and error mapping alike. They are the
+/// caller's, applied on top as an `Endpoint.Middleware`, so a service carrying
+/// traits of that kind is free to interpret them itself.
 @protocolDefinition(
     traits: [
         smithy.api#http
