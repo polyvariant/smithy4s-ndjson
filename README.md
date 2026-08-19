@@ -122,18 +122,24 @@ stream: reading it late doesn't fail, it silently observes whatever the local wa
 inherent to streaming a response rather than a quirk of this interpreter, and it's pinned down by
 `MiddlewareScopeTests`.
 
-## Authorization
+## Middleware
 
-Deliberately not part of the protocol. Gating an endpoint is applied on top as a
-`ServerEndpointMiddleware[F]` — the same type `SimpleRestJsonBuilder` takes, so middleware written
-for one builder works unchanged with the other:
+Cross-cutting concerns are deliberately not part of the protocol. Tracing, metrics, error mapping,
+authorization, rate limiting — all of it is applied on top as a `ServerEndpointMiddleware[F]`, the
+same type `SimpleRestJsonBuilder` takes, so middleware written for one builder works unchanged with
+the other:
 
 ```scala
-NdjsonRestJsonBuilder.routes(impl, myAuthMiddleware)
+NdjsonRestJsonBuilder.routes(impl, myMiddleware)
 ```
+
+Middleware can read the endpoint's own hints, so a trait carried by an operation in the model is
+available to interpret however the caller likes.
 
 It wraps the handler of an endpoint that has *already matched*, never the routing decision itself,
 so a request for an unknown path falls through untouched and these routes compose with others.
+Note the scope caveat above: middleware built on request-scoped state sees that state while the
+operation starts, but not while the response stream is drained.
 
 ## Platform support
 

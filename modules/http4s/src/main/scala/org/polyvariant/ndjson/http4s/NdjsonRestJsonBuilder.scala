@@ -76,10 +76,10 @@ object NdjsonRestJsonBuilder {
 
   /** Builds routes for `impl`, with `middleware` applied per endpoint.
     *
-    * `middleware` is the only extension point, and it is deliberately the whole of it: gating
-    * (roles, authentication), tracing and error mapping are all caller concerns applied on top,
-    * reading whatever they need from the endpoint's own hints. The protocol itself knows about none
-    * of them.
+    * `middleware` is the only extension point, and it is deliberately the whole of it. Whatever a
+    * caller needs to wrap around an operation — tracing, metrics, error mapping, authorization,
+    * rate limiting — goes here, reading whatever it needs from the endpoint's own hints. The
+    * protocol itself knows about none of them.
     *
     * It is a `ServerEndpointMiddleware[F]` — the same type `SimpleRestJsonBuilder` takes — so
     * middleware written for one builder works unchanged with the other. As there, it wraps the
