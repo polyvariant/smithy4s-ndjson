@@ -1,0 +1,9 @@
+.direnv/
+.scala-build/
+**/target
+.bsp/
+
+node_modules/
+.metals/
+.bloop/
+metals.sbt
