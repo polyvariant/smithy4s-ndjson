@@ -34,6 +34,10 @@ val smithy4sVersion = "0.19.11"
 // via alloy, say — resolves to the newer of the two, which is the direction Smithy tooling
 // supports: a newer model library reads older models.
 val smithyVersion = "1.73.0"
+// Only needed to resolve the `alloy#*` shape IDs in the protocol's trait list at trait-codegen
+// time; it is not a dependency of anything published. Keep at or above the alloy that the smithy4s
+// version above builds against, so the trait list can't name a trait that smithy4s doesn't know.
+val alloyVersion = "0.3.40"
 val http4sVersion = "0.23.36"
 val fs2Version = "3.13.0"
 val weaverVersion = "0.13.0"
@@ -68,9 +72,19 @@ lazy val protocol = project
     tlMimaPreviousVersions := Set.empty,
     crossPaths := false,
     autoScalaLibrary := false,
-    // The trait is built only from shapes in `smithy.api`, so no extra model dependencies are
-    // needed to *generate* it (a protocol referencing alloy shapes would list `alloy-core` here).
-    smithyTraitCodegenDependencies := Nil,
+    // The trait's `@protocolDefinition` list names `alloy#*` traits (it mirrors
+    // `alloy#simpleRestJson`), so alloy's model has to be on the path for the shape IDs to resolve
+    // while the trait is generated.
+    //
+    // `Provided`, because this is a build-time model input and nothing else: the generated Java
+    // class references no alloy type, and a consumer of this artifact loads the trait from
+    // `META-INF/smithy`, where the list is already flat strings. The plugin appends this list to
+    // `libraryDependencies` verbatim and then finds the jar by scanning `update`, so the scope has
+    // to be one that still resolves — `Provided` does, while staying out of the published POM's
+    // compile scope. Left unscoped, every consumer of a protocol artifact would inherit alloy.
+    smithyTraitCodegenDependencies := List(
+      "com.disneystreaming.alloy" % "alloy-core" % alloyVersion % Provided
+    ),
     // The generated Java trait classes extend Smithy's own `AbstractTrait`, so the model library
     // is needed to compile them — and by anything loading the trait through Smithy's ModelAssembler.
     libraryDependencies += "software.amazon.smithy" % "smithy-model" % smithyVersion,
