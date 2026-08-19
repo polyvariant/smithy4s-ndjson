@@ -56,9 +56,9 @@ private object StreamFraming {
 
   /** Reads the framing off a streamed member's element schema.
     *
-    * A `@streaming blob` codegens to a `Newtype[Byte]` (`bijection(byte, ...)`), so a bijection over
-    * a byte primitive is how a blob presents itself here; anything else is a union, which is the
-    * only other shape `@streaming` admits.
+    * A `@streaming blob` codegens to a `Newtype[Byte]` (`bijection(byte, ...)`), so a bijection
+    * over a byte primitive is how a blob presents itself here; anything else is a union, which is
+    * the only other shape `@streaming` admits.
     *
     * Matching the primitive's own tag is what makes this typecheck without a cast: `Primitive` is a
     * GADT, so matching `PByte` refines the bijection's source type to `Byte` within the branch.
@@ -67,8 +67,7 @@ private object StreamFraming {
     schema match {
       case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
         Raw(bijection.apply, bijection.from)
-      case _ =>
-        Ndjson()
+      case _ => Ndjson()
     }
 
 }
