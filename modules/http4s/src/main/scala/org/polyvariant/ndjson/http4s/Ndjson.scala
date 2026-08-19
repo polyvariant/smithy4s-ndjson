@@ -16,11 +16,14 @@
 
 package org.polyvariant.ndjson.http4s
 
+import cats.MonadThrow
+import cats.syntax.all.*
 import fs2.Chunk
 import fs2.Stream
 import org.http4s.MediaType
 import smithy4s.Blob
 import smithy4s.codecs.Encoder
+import smithy4s.codecs.PayloadDecoder
 
 /** The newline-delimited-JSON framing: `application/x-ndjson`, one JSON value per line.
   *
@@ -45,5 +48,22 @@ object Ndjson {
   /** Frames a stream of values as an NDJSON byte stream. */
   def encode[F[_], A](values: Stream[F, A], codec: Encoder[Blob, A]): Stream[F, Byte] =
     values.mapChunks(_.flatMap(encodeLine(_, codec)))
+
+  /** Reads an NDJSON byte stream back into its values.
+    *
+    * Blank lines are skipped rather than decoded, so the trailing newline that [[encodeLine]]
+    * writes after the final value does not read back as an extra element. A line that is present
+    * but not valid JSON for the element schema fails the stream: it is a malformed request, and
+    * continuing past it would hand the impl a silently short stream.
+    */
+  def decode[F[_]: MonadThrow, A](
+    bytes: Stream[F, Byte],
+    codec: PayloadDecoder[A],
+  ): Stream[F, A] =
+    bytes
+      .through(fs2.text.utf8.decode)
+      .through(fs2.text.lines)
+      .filter(_.trim.nonEmpty)
+      .evalMap(line => codec.decode(Blob(line)).liftTo[F])
 
 }

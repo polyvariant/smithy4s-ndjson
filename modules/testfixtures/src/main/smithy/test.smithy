@@ -18,6 +18,9 @@ service TestService {
         Greet
         Tagged
         Fallible
+        Ingest
+        Download
+        Relay
     ]
 }
 
@@ -146,6 +149,74 @@ structure NotThere {
 structure Unprocessable {
     @required
     message: String
+}
+
+/// NDJSON in: a `@streaming` union on the *input* side, decoded one value per line.
+@http(method: "POST", uri: "/ingest", code: 200)
+operation Ingest {
+    input := {
+        @httpPayload
+        @required
+        commands: Command
+    }
+
+    output := {
+        @required
+        applied: Integer
+    }
+}
+
+/// Binary out: a `@streaming blob` on the *output* side, written verbatim.
+@readonly
+@http(method: "GET", uri: "/download/{name}", code: 200)
+operation Download {
+    input := {
+        @httpLabel
+        @required
+        name: String
+    }
+
+    output := {
+        @httpHeader("X-Download-Name")
+        downloadName: String
+
+        @httpPayload
+        @required
+        content: Payload
+    }
+}
+
+/// Binary in, binary out: both edges raw, so the framing rule is exercised
+/// symmetrically within one operation.
+@http(method: "POST", uri: "/relay", code: 200)
+operation Relay {
+    input := {
+        @httpPayload
+        @required
+        body: Payload
+    }
+
+    output := {
+        @httpPayload
+        @required
+        content: Payload
+    }
+}
+
+@streaming
+union Command {
+    add: Add
+    remove: Remove
+}
+
+structure Add {
+    @required
+    key: String
+}
+
+structure Remove {
+    @required
+    key: String
 }
 
 @streaming

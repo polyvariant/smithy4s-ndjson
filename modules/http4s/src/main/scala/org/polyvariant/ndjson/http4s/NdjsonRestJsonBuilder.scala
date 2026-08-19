@@ -25,6 +25,7 @@ import org.http4s.Header
 import org.http4s.Headers
 import org.http4s.HttpApp
 import org.http4s.HttpRoutes
+import org.http4s.MediaType
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.Status
@@ -38,8 +39,6 @@ import smithy4s.http.Metadata
 import smithy4s.http.PathParams
 import smithy4s.http4s.ServerEndpointMiddleware
 import smithy4s.kinds.PolyFunction5
-import smithy4s.schema.Primitive
-import smithy4s.schema.Schema
 import smithy4s.server.UnaryServerCodecs
 
 /** Interprets a service annotated with `org.polyvariant.ndjson#ndjsonRestJson` as http4s routes.
@@ -206,47 +205,27 @@ object NdjsonRestJsonBuilder {
 
   /** The request body, as the operation's streamed-input element type; empty when it has none.
     *
-    * A `@streaming blob` codegens to a `Newtype[Byte]` (`ArchiveBlob`, `Payload`, …) rather than to
-    * `Byte` itself, so the raw body has to be wrapped element-wise. The wrapper is recovered from
-    * the streaming member's own schema rather than assumed, so a shape that is not a blob fails
-    * loudly here instead of corrupting the stream downstream.
+    * The framing follows the streamed member's shape: a `@streaming blob` is the body verbatim,
+    * wrapped element-wise into the newtype codegen gave it, while a `@streaming union` is read as
+    * newline-delimited JSON and decoded one value per line. Both directions agree on this rule, so
+    * an operation reads its input exactly the way a peer would write it as output.
     *
     * `SI` is `Nothing` when the operation streams nothing in, making the empty stream the only
     * inhabitant that could be passed.
     */
-  private def streamedBody[Op[_, _, _, _, _], F[_], I, E, O, SI, SO](
+  private def streamedBody[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
     request: Request[F],
   ): Stream[F, SI] =
     endpoint
       .streamedInput
       .fold(Stream.empty.covaryAll[F, SI]) { streamed =>
-        val wrap = byteWrapper(streamed.schema)
-        request.body.map(wrap)
+        StreamFraming.fromSchema(streamed.schema) match {
+          case StreamFraming.Raw(wrap, _) => request.body.map(wrap)
+          case StreamFraming.Ndjson()     =>
+            Ndjson.decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
+        }
       }
-
-  /** Recovers the `Byte => SI` wrapper implied by a `@streaming blob`'s schema.
-    *
-    * Codegen renders such a blob as `bijection(byte, ...)`, so the wrapper is the bijection itself.
-    * An operation whose streamed input is anything else is a protocol error, and is reported as one
-    * rather than being coerced.
-    *
-    * The nested match on the primitive's own tag is what makes this typecheck without a cast:
-    * `Primitive` is a GADT, so matching `PByte` refines the bijection's source type to `Byte`
-    * within the branch. Asking `underlying.isPrimitive(PByte)` in a guard instead would answer the
-    * same question at runtime while telling the compiler nothing, leaving the `Byte` to be forced
-    * in by hand.
-    */
-  private def byteWrapper[SI](schema: Schema[SI]): Byte => SI =
-    schema match {
-      case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
-        bijection.apply
-      case other =>
-        throw new IllegalArgumentException(
-          s"${other.shapeId} is used as a streamed input but is not a blob; the " +
-            "ndjsonRestJson protocol can only stream a `@streaming blob` request body in."
-        )
-    }
 
   /** Decodes the operation's input.
     *
@@ -282,14 +261,16 @@ object NdjsonRestJsonBuilder {
       headers = NdjsonRestJsonCodecs.headersOf(request),
     )
 
-  /** Encodes the response: NDJSON when the operation streams its output, plain JSON otherwise.
+  /** Encodes the response: a framed stream when the operation streams its output, plain JSON
+    * otherwise.
     *
     * The non-streaming case is smithy4s's own encoder, so `@httpResponseCode` and `@httpHeader`
     * bindings on the output are honoured. The streaming case cannot use it — that encoder wants a
     * whole body up front — so the envelope's metadata is encoded separately and the body is framed
-    * as NDJSON. The status is fixed by `@http(code:)` and committed before the first element is
-    * pulled, which is what lets a client render progress, and why a later failure has to travel as
-    * an element rather than a status.
+    * per the streamed member's shape: raw bytes for a `@streaming blob`, NDJSON for a `@streaming`
+    * union. The status is fixed by `@http(code:)` and committed before the first element is pulled,
+    * which is what lets a client render progress, and why a later failure has to travel as an
+    * element rather than a status.
     */
   private def encodeOutput[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
@@ -302,31 +283,39 @@ object NdjsonRestJsonBuilder {
         streamed =>
           val status = Status.fromInt(http.code).getOrElse(Status.Ok)
           val metadataEncoder = Metadata.Encoder.fromSchema(endpoint.schema.output)
-          val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
+          val framing = StreamFraming.fromSchema(streamed.schema)
+
+          val encodeBody: Stream[F, SO] => Stream[F, Byte] =
+            framing match {
+              case StreamFraming.Raw(_, unwrap) => _.map(unwrap)
+              case StreamFraming.Ndjson()       =>
+                val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
+                Ndjson.encode(_, elementEncoder)
+            }
 
           (output, stream) => {
             val metadata = metadataEncoder.encode(output)
 
             Response[F](
               status = metadata.statusCode.flatMap(Status.fromInt(_).toOption).getOrElse(status),
-              headers = ndjsonHeaders(metadata),
-              body = Ndjson.encode(stream, elementEncoder),
+              headers = streamedHeaders(metadata, framing.mediaType),
+              body = encodeBody(stream),
             ).pure[F]
           }
       }
 
   /** The response headers for a streamed output: whatever the envelope's `@httpHeader` members
-    * bind, plus the NDJSON content type.
+    * bind, plus the content type the framing implies.
     *
     * The content type is `put` last so it wins: the framing is the protocol's to decide, not the
     * envelope's.
     */
-  private def ndjsonHeaders(metadata: Metadata): Headers =
+  private def streamedHeaders(metadata: Metadata, mediaType: MediaType): Headers =
     Headers(
       metadata
         .headers
         .toList
         .flatMap((name, values) => values.map(value => Header.Raw(CIString(name.toString), value)))
-    ).put(`Content-Type`(Ndjson.mediaType))
+    ).put(`Content-Type`(mediaType))
 
 }
