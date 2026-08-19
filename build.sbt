@@ -1,3 +1,5 @@
+import com.typesafe.tools.mima.core.*
+
 ThisBuild / tlBaseVersion := "0.1"
 ThisBuild / organization := "org.polyvariant"
 ThisBuild / organizationName := "Polyvariant"
@@ -184,6 +186,15 @@ lazy val http4s = project
       "co.fs2" %% "fs2-core" % fs2Version,
       "org.typelevel" %% "weaver-cats" % weaverVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
+    ),
+    // `NdjsonRestJson` used to be generated into this jar; it now lives in `core`. MiMa compares
+    // jar contents and so reports it missing, but it compares one artifact rather than the
+    // dependency graph: this module depends on `core`, so the class is still on the classpath of
+    // anyone upgrading, at the same fully-qualified name. Verified by compiling a probe that
+    // depends only on `smithy4s-ndjson-http4s` and references the class.
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[MissingClassProblem]("org.polyvariant.ndjson.NdjsonRestJson"),
+      ProblemFilters.exclude[MissingClassProblem]("org.polyvariant.ndjson.NdjsonRestJson$"),
     ),
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
