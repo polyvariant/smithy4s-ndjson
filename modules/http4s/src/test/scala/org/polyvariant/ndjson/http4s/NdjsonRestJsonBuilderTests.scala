@@ -18,12 +18,14 @@ package org.polyvariant.ndjson.http4s
 
 import cats.effect.IO
 import fs2.Stream
+import org.http4s.Header
 import org.http4s.Method
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.Status
 import org.http4s.Uri
 import org.polyvariant.ndjson.test.*
+import org.typelevel.ci.CIString
 import weaver.SimpleIOSuite
 
 object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
@@ -34,15 +36,20 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
   private val impl: TestServiceGen[WithStreamedIO[IO]] =
     new TestServiceGen[WithStreamedIO[IO]] {
 
-      def greet(name: String, loud: Option[Boolean]) =
+      def greet(name: String, loud: Option[Boolean], caller: Option[String]) =
         _ =>
           IO.pure(
             (
               GreetOutput(
-                if (loud.contains(true))
-                  s"HELLO $name"
-                else
-                  s"hello $name"
+                message =
+                  if (loud.contains(true))
+                    s"HELLO $name"
+                  else
+                    s"hello $name",
+                // Bound to @httpHeader / @httpResponseCode, so both must show up on the
+                // response rather than in its body.
+                kind = Some(caller.fold("anonymous")(c => s"for-$c")),
+                status = Some(203),
               ),
               Stream.empty,
             )
@@ -78,7 +85,7 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       def fallible(which: String) =
         _ =>
           which match {
-            case "missing"       => IO.raiseError(NotThere("no such thing"))
+            case "missing"       => IO.raiseError(NotThere("no such thing", Some("a thing")))
             case "unprocessable" => IO.raiseError(Unprocessable("cannot do that"))
             case "boom"          => IO.raiseError(new RuntimeException("undeclared"))
             case other           => IO.pure((FallibleOutput(other), Stream.empty))
@@ -86,11 +93,11 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
 
       /** Echoes the path label back, proving metadata is still decoded when the body is streamed.
         */
-      def tagged(tag: String) =
+      def tagged(tag: String, source: Option[String]) =
         body =>
           IO.pure(
             (
-              TaggedOutput(),
+              TaggedOutput(echo = source.map(_.toUpperCase)),
               Stream
                 .eval(body.compile.count)
                 .map(total => Event.ProgressCase(Progress(total)))
@@ -111,14 +118,33 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
   private def lines(response: Response[IO]): IO[List[String]] =
     bodyText(response).map(_.linesIterator.toList)
 
+  private def header(response: Response[IO], name: String): Option[String] =
+    response.headers.get(CIString(name)).map(_.head.value)
+
   test("a non-streaming operation is routed like plain simpleRestJson") {
     run(Request[IO](Method.GET, Uri.unsafeFromString("/greet/world"))).flatMap { response =>
       bodyText(response).map { body =>
-        expect(response.status == Status.Ok) &&
         expect(
           response.contentType.map(_.mediaType).contains(org.http4s.MediaType.application.json)
         ) &&
         expect(body == """{"message":"hello world"}""")
+      }
+    }
+  }
+
+  // The three metadata bindings smithy4s's own codecs apply and a hand-rolled encoder is apt to
+  // drop: a header on the way in, and a header plus a status override on the way out.
+  test("an output's @httpHeader and @httpResponseCode bindings are applied") {
+    run(
+      Request[IO](Method.GET, Uri.unsafeFromString("/greet/world"))
+        .putHeaders(Header.Raw(CIString("X-Caller"), "alice"))
+    ).flatMap { response =>
+      bodyText(response).map { body =>
+        // @httpResponseCode beats the operation's @http(code: 200).
+        expect(response.status == Status.NonAuthoritativeInformation) &&
+        expect(header(response, "X-Greeting-Kind").contains("for-alice")) &&
+        // Header-bound members stay out of the body.
+        expect(clue(body) == """{"message":"hello world"}""")
       }
     }
   }
@@ -186,6 +212,7 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/tagged/abc"))
         .withEntity("1234")
+        .putHeaders(Header.Raw(CIString("X-Tag-Source"), "upstream"))
     ).flatMap { response =>
       lines(response).map { ls =>
         // 202, per the operation's @http(code:) — the status comes from the model,
@@ -193,6 +220,18 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
         expect(response.status == Status.Accepted) &&
         expect(ls == List("""{"progress":{"soFar":4}}""", """{"failed":{"message":"abc"}}"""))
       }
+    }
+  }
+
+  test("a streamed response still carries the envelope's @httpHeader bindings") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/tagged/abc"))
+        .withEntity("1234")
+        .putHeaders(Header.Raw(CIString("X-Tag-Source"), "upstream"))
+    ).map { response =>
+      expect(header(response, "X-Tag-Echo").contains("UPSTREAM")) &&
+      // The framing is the protocol's call, so it wins over anything the envelope binds.
+      expect(response.contentType.map(_.mediaType).contains(Ndjson.mediaType))
     }
   }
 
@@ -217,6 +256,21 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
         ) &&
         expect(clue(body) == """{"message":"no such thing"}""")
       }
+    }
+  }
+
+  // smithy4s clients read the discriminator off a header before falling back to the body, so an
+  // error union is only decodable by one if this is sent.
+  test("a declared error carries the error-type discriminator header") {
+    run(Request[IO](Method.GET, Uri.unsafeFromString("/fallible/missing"))).map { response =>
+      expect(header(response, "X-Amzn-Errortype").contains("NotThere")) &&
+      expect(header(response, "X-Error-Type").contains("NotThere"))
+    }
+  }
+
+  test("an error's own @httpHeader bindings are applied") {
+    run(Request[IO](Method.GET, Uri.unsafeFromString("/fallible/missing"))).map { response =>
+      expect(header(response, "X-Missing-What").contains("a thing"))
     }
   }
 
