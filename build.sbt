@@ -49,8 +49,8 @@ val commonSettings = Seq(
   *
   * Published as a plain Java artifact (no Scala suffix, no Scala library) because a protocol
   * definition is not Scala-specific: it is consumed by `smithy-build`, by Smithy CLI validators,
-  * and by codegen for any language — none of which should have to pick a Scala version to depend
-  * on it. Scala users get it transitively via `http4s` below.
+  * and by codegen for any language — none of which should have to pick a Scala version to depend on
+  * it. Scala users get it transitively via `http4s` below.
   *
   * `SmithyTraitCodegenPlugin` generates the Java trait classes from the model and packages the
   * `.smithy` file under `META-INF/smithy`, so the trait resolves off the classpath.

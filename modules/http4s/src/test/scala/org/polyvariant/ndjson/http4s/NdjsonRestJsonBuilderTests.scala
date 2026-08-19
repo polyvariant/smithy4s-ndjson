@@ -37,7 +37,15 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       def greet(name: String, loud: Option[Boolean]) =
         _ =>
           IO.pure(
-            (GreetOutput(if (loud.contains(true)) s"HELLO $name" else s"hello $name"), Stream.empty)
+            (
+              GreetOutput(
+                if (loud.contains(true))
+                  s"HELLO $name"
+                else
+                  s"hello $name"
+              ),
+              Stream.empty,
+            )
           )
 
       def echo(count: Int) =
@@ -64,19 +72,20 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
             )
           )
 
-      /** Raises the error named by the path label, so each declared error's `@httpError` status
-        * can be checked; `boom` raises an undeclared one, which must NOT be encoded here.
+      /** Raises the error named by the path label, so each declared error's `@httpError` status can
+        * be checked; `boom` raises an undeclared one, which must NOT be encoded here.
         */
       def fallible(which: String) =
         _ =>
           which match {
-            case "missing"      => IO.raiseError(NotThere("no such thing"))
+            case "missing"       => IO.raiseError(NotThere("no such thing"))
             case "unprocessable" => IO.raiseError(Unprocessable("cannot do that"))
-            case "boom"         => IO.raiseError(new RuntimeException("undeclared"))
-            case other          => IO.pure((FallibleOutput(other), Stream.empty))
+            case "boom"          => IO.raiseError(new RuntimeException("undeclared"))
+            case other           => IO.pure((FallibleOutput(other), Stream.empty))
           }
 
-      /** Echoes the path label back, proving metadata is still decoded when the body is streamed. */
+      /** Echoes the path label back, proving metadata is still decoded when the body is streamed.
+        */
       def tagged(tag: String) =
         body =>
           IO.pure(
@@ -106,7 +115,9 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     run(Request[IO](Method.GET, Uri.unsafeFromString("/greet/world"))).flatMap { response =>
       bodyText(response).map { body =>
         expect(response.status == Status.Ok) &&
-        expect(response.contentType.map(_.mediaType).contains(org.http4s.MediaType.application.json)) &&
+        expect(
+          response.contentType.map(_.mediaType).contains(org.http4s.MediaType.application.json)
+        ) &&
         expect(body == """{"message":"hello world"}""")
       }
     }

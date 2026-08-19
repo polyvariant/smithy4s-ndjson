@@ -34,13 +34,13 @@ import smithy4s.Blob
 import smithy4s.Endpoint
 import smithy4s.PartialData
 import smithy4s.Service
-import smithy4s.http4s.ServerEndpointMiddleware
 import smithy4s.http.CaseInsensitive
 import smithy4s.http.HttpEndpoint
 import smithy4s.http.HttpMethod
 import smithy4s.http.HttpRestSchema
 import smithy4s.http.HttpStatusCode
 import smithy4s.http.Metadata
+import smithy4s.http4s.ServerEndpointMiddleware
 import smithy4s.json.Json
 import smithy4s.kinds.PolyFunction5
 import smithy4s.schema.Alt
@@ -69,8 +69,8 @@ import smithy4s.schema.Schema
   * `MiddlewareScopeTests` holds this property.
   *
   * This is inherent to streaming a response rather than an artifact of this builder: nothing an
-  * interpreter or a middleware can do keeps a request scope open across a body that is pulled
-  * after the response has been returned.
+  * interpreter or a middleware can do keeps a request scope open across a body that is pulled after
+  * the response has been returned.
   */
 object NdjsonRestJsonBuilder {
 
@@ -78,8 +78,8 @@ object NdjsonRestJsonBuilder {
     *
     * `middleware` is the only extension point, and it is deliberately the whole of it: gating
     * (roles, authentication), tracing and error mapping are all caller concerns applied on top,
-    * reading whatever they need from the endpoint's own hints. The protocol itself knows about
-    * none of them.
+    * reading whatever they need from the endpoint's own hints. The protocol itself knows about none
+    * of them.
     *
     * It is a `ServerEndpointMiddleware[F]` — the same type `SimpleRestJsonBuilder` takes — so
     * middleware written for one builder works unchanged with the other. As there, it wraps the
@@ -152,8 +152,8 @@ object NdjsonRestJsonBuilder {
     }
   }
 
-  /** Encodes an operation's declared errors (`errors: [...]`) as HTTP responses, taking each
-    * status from its `@httpError` and falling back to 500.
+  /** Encodes an operation's declared errors (`errors: [...]`) as HTTP responses, taking each status
+    * from its `@httpError` and falling back to 500.
     *
     * Only errors the operation declares are caught — `liftError` returns `None` for anything else,
     * which propagates so the surrounding middleware still turns it into a 500.
@@ -240,8 +240,8 @@ object NdjsonRestJsonBuilder {
   /** Recovers the `Byte => SI` wrapper implied by a `@streaming blob`'s schema.
     *
     * Codegen renders such a blob as `bijection(byte, ...)`, so the wrapper is the bijection itself.
-    * An operation whose streamed input is anything else is a protocol error, and is reported as
-    * one rather than being coerced.
+    * An operation whose streamed input is anything else is a protocol error, and is reported as one
+    * rather than being coerced.
     */
   private def byteWrapper[SI](schema: Schema[SI]): Byte => SI =
     schema match {
@@ -279,14 +279,18 @@ object NdjsonRestJsonBuilder {
         .body
         .compile
         .to(Array)
-        .flatMap(bytes => Json.payloadCodecs.decoders.fromSchema(schema).decode(Blob(bytes)).liftTo[F])
+        .flatMap(bytes =>
+          Json.payloadCodecs.decoders.fromSchema(schema).decode(Blob(bytes)).liftTo[F]
+        )
 
     HttpRestSchema(endpoint.schema.input) match {
       case HttpRestSchema.Empty(value)      => value.pure[F]
       case HttpRestSchema.OnlyMetadata(sch) => fromMetadata(sch)
       case HttpRestSchema.OnlyBody(sch)     =>
-        if (endpoint.streamedInput.isDefined) fromMetadata(endpoint.schema.input)
-        else fromBody(sch)
+        if (endpoint.streamedInput.isDefined)
+          fromMetadata(endpoint.schema.input)
+        else
+          fromBody(sch)
       case HttpRestSchema.MetadataAndBody(metadataSchema, bodySchema) =>
         if (endpoint.streamedInput.isDefined)
           fromMetadata(metadataSchema).map(meta => PartialData.unsafeReconcile(meta))
