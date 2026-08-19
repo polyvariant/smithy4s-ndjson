@@ -1,7 +1,7 @@
 # smithy4s-ndjson
 
-A [Smithy](https://smithy.io) protocol for services that stream — a raw binary request body in,
-and/or [newline-delimited JSON](https://github.com/ndjson/ndjson-spec) out — plus its
+A [Smithy](https://smithy.io) protocol for services that stream — raw bytes or
+[newline-delimited JSON](https://github.com/ndjson/ndjson-spec), in either direction — plus its
 [smithy4s](https://disneystreaming.github.io/smithy4s/) http4s interpreter.
 
 It's the shape smithy4s's `SimpleRestJsonBuilder` can't express: `routes` there takes a kind-1
@@ -11,14 +11,14 @@ bodies.
 ## Installation
 
 ```scala
-libraryDependencies += "org.polyvariant" %% "smithy4s-ndjson-http4s" % "0.1.0"
+libraryDependencies += "org.polyvariant" %% "smithy4s-ndjson-http4s" % "0.1.1"
 ```
 
 The protocol trait is published separately, as a plain Java artifact with no Scala suffix — so
 `smithy-build`, the Smithy CLI, or codegen for another language can depend on the protocol alone:
 
 ```scala
-libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol" % "0.1.0"
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol" % "0.1.1"
 ```
 
 Scala users don't need it explicitly: `smithy4s-ndjson-http4s` brings it along, and the trait
@@ -70,16 +70,56 @@ union Event {
 
 Metadata bindings (path / query / header) and non-streaming payloads follow `alloy#simpleRestJson`
 exactly, so an operation without any `@streaming` member behaves identically under either protocol —
-a service may freely mix both kinds. On top of that:
+a service may freely mix both kinds.
 
-- an operation whose input payload is a `@streaming` blob receives the raw request body as a byte
-  stream, rather than a decoded value;
-- an operation whose output payload is a `@streaming` union writes one JSON value per line as
-  `application/x-ndjson`.
+On top of that, a `@streaming` payload is framed by its *shape*, and the same rule applies to both
+edges — so an operation reads a body exactly the way a peer writes one:
 
-Each line is byte-for-byte what `simpleRestJson` would have written as a whole body, and is
+|                    | input             | output                                      |
+| ------------------ | ----------------- | ------------------------------------------- |
+| `@streaming blob`  | raw bytes in      | raw bytes out (`application/octet-stream`)  |
+| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`) |
+
+Smithy restricts `@streaming` to `:is(blob, union)`, so those two rows are the whole of it. The
+example above uses one of each; an operation is free to use the same framing on both sides:
+
+```smithy
+/// Raw bytes in, raw bytes out.
+@http(method: "POST", uri: "/relay", code: 200)
+operation Relay {
+    input := {
+        @httpPayload
+        @required
+        body: Payload
+    }
+
+    output := {
+        @httpPayload
+        @required
+        content: Payload
+    }
+}
+```
+
+Each NDJSON line is byte-for-byte what `simpleRestJson` would have written as a whole body, and is
 newline-*terminated* rather than separated — so a reader that hits EOF mid-line knows it was
-truncated.
+truncated. Reading a stream back skips blank lines, so that trailing terminator doesn't come back as
+an extra element on the next hop; a line that is present but malformed fails the request rather than
+silently shortening the stream.
+
+### What the model must satisfy
+
+There is no custom validator in this protocol. Everything it relies on is already enforced by
+Smithy's own validators, switched on by the traits listed in `@protocolDefinition`:
+
+- `@streaming` is restricted to `:is(blob, union)` by the trait's own selector;
+- a `@streaming` member must carry `@httpPayload` (`StreamingTrait`);
+- every *other* member of that structure must then have an HTTP binding of its own (`HttpPayload`) —
+  otherwise it would have nowhere to travel, the body being claimed by the stream;
+- every operation must have `@http` (`HttpBindingsMissing`), since routing is by method and URI.
+
+So a metadata-bound member alongside a streamed body is fine, and a member with no binding at all is
+a build error rather than a value that silently vanishes.
 
 ## Serving it
 
