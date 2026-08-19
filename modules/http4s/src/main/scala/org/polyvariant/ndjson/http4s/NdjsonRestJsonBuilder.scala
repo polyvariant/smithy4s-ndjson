@@ -242,12 +242,17 @@ object NdjsonRestJsonBuilder {
     * Codegen renders such a blob as `bijection(byte, ...)`, so the wrapper is the bijection itself.
     * An operation whose streamed input is anything else is a protocol error, and is reported as one
     * rather than being coerced.
+    *
+    * The nested match on the primitive's own tag is what makes this typecheck without a cast:
+    * `Primitive` is a GADT, so matching `PByte` refines the bijection's source type to `Byte`
+    * within the branch. Asking `underlying.isPrimitive(PByte)` in a guard instead would answer the
+    * same question at runtime while telling the compiler nothing, leaving the `Byte` to be forced
+    * in by hand.
     */
   private def byteWrapper[SI](schema: Schema[SI]): Byte => SI =
     schema match {
-      case Schema.BijectionSchema(underlying, bijection)
-          if underlying.isPrimitive(Primitive.PByte) =>
-        byte => bijection(byte.asInstanceOf)
+      case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
+        bijection.apply
       case other =>
         throw new IllegalArgumentException(
           s"${other.shapeId} is used as a streamed input but is not a blob; the " +
