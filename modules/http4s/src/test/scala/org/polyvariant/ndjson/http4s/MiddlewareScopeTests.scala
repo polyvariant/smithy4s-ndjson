@@ -51,7 +51,7 @@ object MiddlewareScopeTests extends SimpleIOSuite {
   ): HttpRoutes[IO] = {
     val impl: TestServiceGen[WithStreamedIO[IO]] =
       new TestServiceGen[WithStreamedIO[IO]] {
-        def greet(name: String, loud: Option[Boolean]) =
+        def greet(name: String, loud: Option[Boolean], caller: Option[String]) =
           _ => IO.pure((GreetOutput(name), Stream.empty))
 
         def echo(count: Int) =
@@ -68,7 +68,8 @@ object MiddlewareScopeTests extends SimpleIOSuite {
             }
 
         def fallible(which: String) = _ => IO.pure((FallibleOutput("ok"), Stream.empty))
-        def tagged(tag: String) = _ => IO.pure((TaggedOutput(), Stream.empty))
+        def tagged(tag: String, source: Option[String]) =
+          _ => IO.pure((TaggedOutput(), Stream.empty))
         def upload() = _ => IO.pure((UploadOutput(), Stream.empty))
       }
 

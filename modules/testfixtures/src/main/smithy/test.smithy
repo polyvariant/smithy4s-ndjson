@@ -52,7 +52,8 @@ operation Upload {
     }
 }
 
-/// No streaming at all — must behave exactly as simpleRestJson would.
+/// No streaming at all — must behave exactly as simpleRestJson would, including
+/// the metadata bindings on the way out: a header and an overridden status.
 @readonly
 @http(method: "GET", uri: "/greet/{name}", code: 200)
 operation Greet {
@@ -63,16 +64,26 @@ operation Greet {
 
         @httpQuery("loud")
         loud: Boolean
+
+        @httpHeader("X-Caller")
+        caller: String
     }
 
     output := {
         @required
         message: String
+
+        @httpHeader("X-Greeting-Kind")
+        kind: String
+
+        @httpResponseCode
+        status: Integer
     }
 }
 
 /// Metadata bindings alongside a streamed request body: the label must be
-/// decoded from the path even though the body is claimed by the stream.
+/// decoded from the path even though the body is claimed by the stream, and the
+/// envelope's own header binding must survive onto the streamed response.
 @http(method: "POST", uri: "/tagged/{tag}", code: 202)
 operation Tagged {
     input := {
@@ -80,12 +91,18 @@ operation Tagged {
         @required
         tag: String
 
+        @httpHeader("X-Tag-Source")
+        source: String
+
         @httpPayload
         @required
         body: Payload
     }
 
     output := {
+        @httpHeader("X-Tag-Echo")
+        echo: String
+
         @httpPayload
         @required
         event: Event
@@ -119,6 +136,9 @@ operation Fallible {
 structure NotThere {
     @required
     message: String
+
+    @httpHeader("X-Missing-What")
+    what: String
 }
 
 @error("client")

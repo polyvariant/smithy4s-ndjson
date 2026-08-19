@@ -20,32 +20,27 @@ import cats.data.Kleisli
 import cats.data.OptionT
 import cats.effect.Concurrent
 import cats.syntax.all.*
-import fs2.Chunk
 import fs2.Stream
+import org.http4s.Header
 import org.http4s.Headers
 import org.http4s.HttpApp
 import org.http4s.HttpRoutes
-import org.http4s.MediaType
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.Status
 import org.http4s.headers.`Content-Type`
-import smithy4s.Blob
+import org.typelevel.ci.CIString
 import smithy4s.Endpoint
-import smithy4s.PartialData
 import smithy4s.Service
-import smithy4s.http.CaseInsensitive
 import smithy4s.http.HttpEndpoint
 import smithy4s.http.HttpMethod
-import smithy4s.http.HttpRestSchema
-import smithy4s.http.HttpStatusCode
 import smithy4s.http.Metadata
+import smithy4s.http.PathParams
 import smithy4s.http4s.ServerEndpointMiddleware
-import smithy4s.json.Json
 import smithy4s.kinds.PolyFunction5
-import smithy4s.schema.Alt
 import smithy4s.schema.Primitive
 import smithy4s.schema.Schema
+import smithy4s.server.UnaryServerCodecs
 
 /** Interprets a service annotated with `org.polyvariant.ndjson#ndjsonRestJson` as http4s routes.
   *
@@ -54,6 +49,14 @@ import smithy4s.schema.Schema
   * `@streaming` members survive into the method signatures and can be wired to the request and
   * response bodies. Operations without any `@streaming` member are routed the same way
   * `simpleRestJson` would route them, so a service may freely mix both.
+  *
+  * ==What is delegated==
+  *
+  * Everything that isn't streaming comes from smithy4s itself, via [[NdjsonRestJsonCodecs]]:
+  * decoding inputs, encoding outputs, and encoding declared errors all run the same codec stack
+  * `SimpleRestJsonBuilder` runs. Only routing and the two streaming edges are implemented here,
+  * because those are the parts smithy4s's own router cannot express — it takes a kind-1 algebra,
+  * which has already erased `SI` and `SO` by the time it sees the service.
   *
   * ==Scope==
   *
@@ -95,6 +98,8 @@ object NdjsonRestJsonBuilder {
     val interpreter: PolyFunction5[service.Operation, WithStreamedIO[F]] =
       service.toPolyFunction(impl)
 
+    val codecs = NdjsonRestJsonCodecs.make[F]
+
     // Pairing each endpoint with its HttpEndpoint inside a single helper keeps `I` bound: splitting
     // the cast from the use would let the existential escape and the two `I`s stop matching.
     def compile(
@@ -104,7 +109,7 @@ object NdjsonRestJsonBuilder {
         .cast(endpoint.schema)
         .toOption
         .map { http =>
-          (http, one(endpoint, http, interpreter, middleware.prepare(service)(endpoint)))
+          (http, one(endpoint, http, interpreter, codecs, middleware.prepare(service)(endpoint)))
         }
 
     // `moreSpecific` puts static segments ahead of greedy labels, so an endpoint that could only
@@ -127,21 +132,28 @@ object NdjsonRestJsonBuilder {
     endpoint: Endpoint[Op, I, E, O, SI, SO],
     http: HttpEndpoint[I],
     interpreter: PolyFunction5[Op, WithStreamedIO[F]],
+    codecs: UnaryServerCodecs.Make[F, (Request[F], PathParams), Response[F]],
     wrap: HttpApp[F] => HttpApp[F],
   ): HttpRoutes[F] = {
     val run: I => WithStreamedIO[F][I, E, O, SI, SO] =
       input => interpreter(endpoint.wrap(input))
 
-    def handler(pathParams: Map[String, String]): HttpApp[F] =
+    val operationCodecs = codecs(endpoint.schema)
+
+    val decode = decodeInput(endpoint, operationCodecs)
+    val encode = encodeOutput(endpoint, http, operationCodecs)
+
+    def handler(pathParams: PathParams): HttpApp[F] =
       wrap(
         Kleisli { (request: Request[F]) =>
           val respond =
             for {
-              input <- decodeInput(endpoint, pathParams, request)
+              input <- decode(request, pathParams)
               result <- run(input)(streamedBody(endpoint, request))
-            } yield encodeOutput(endpoint, http, result._1, result._2)
+              response <- encode(result._1, result._2)
+            } yield response
 
-          encodeErrors(endpoint, respond)
+          encodeErrors(endpoint, operationCodecs, respond)
         }
       )
 
@@ -152,11 +164,15 @@ object NdjsonRestJsonBuilder {
     }
   }
 
-  /** Encodes an operation's declared errors (`errors: [...]`) as HTTP responses, taking each status
-    * from its `@httpError` and falling back to 500.
+  /** Encodes an operation's declared errors (`errors: [...]`) as HTTP responses.
     *
-    * Only errors the operation declares are caught — `liftError` returns `None` for anything else,
-    * which propagates so the surrounding middleware still turns it into a 500.
+    * The encoding itself is smithy4s's — status from `@httpError`, body and any `@httpHeader`
+    * bindings from the error's own schema, plus the error-type discriminator header — but which
+    * throwables it applies to is decided here rather than by the codecs' `throwableEncoder`.
+    * `liftError` returns `None` for anything the operation does not declare, and those propagate
+    * untouched so the surrounding middleware still sees them and can turn them into a 500 itself.
+    * Swallowing them into a canned 500 here would hide server faults from exactly the layer that
+    * exists to observe them.
     *
     * This can only help a ''non-streaming'' failure. Once an operation has begun streaming, the
     * status is already committed and there is nowhere left to put an error; such failures have to
@@ -164,46 +180,18 @@ object NdjsonRestJsonBuilder {
     */
   private def encodeErrors[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
+    codecs: UnaryServerCodecs[F, (Request[F], PathParams), Response[F], I, E, O],
     response: F[Response[F]],
   ): F[Response[F]] =
     endpoint
       .error
       .fold(response) { errorSchema =>
-        val statusOf = HttpStatusCode.fromSchema(errorSchema.schema)
-
-        // Encode through the *alternative's* schema, not the union's. `errorSchema.schema` is the
-        // union of everything the operation declares, so encoding an error through it would wrap
-        // the payload in a discriminator (`{"NotThere":{...}}`); the wire format is the member's
-        // own body, as simpleRestJson writes it.
-        val encoders = errorSchema
-          .alternatives
-          .map(alt => altEncoder(alt))
-
         response.recoverWith { throwable =>
           errorSchema
             .liftError(throwable)
-            .fold(throwable.raiseError[F, Response[F]]) { error =>
-              Response[F](
-                status = Status
-                  .fromInt(statusOf.code(error, 500))
-                  .getOrElse(Status.InternalServerError),
-                headers = Headers(`Content-Type`(MediaType.application.json)),
-                body = Stream.chunk(
-                  Chunk.array(encoders(errorSchema.ordinal(error)).apply(error).toArray)
-                ),
-              ).pure[F]
-            }
+            .fold(throwable.raiseError[F, Response[F]])(codecs.errorEncoder)
         }
       }
-
-  /** An encoder for one member of an error union, narrowing the union value to that member first.
-    *
-    * Split out so the existential member type stays bound to its own schema and projection.
-    */
-  private def altEncoder[E, A](alt: Alt[E, A]): E => Blob = {
-    val encoder = Json.payloadCodecs.encoders.fromSchema(alt.schema)
-    error => encoder.encode(alt.project(error))
-  }
 
   private def matchRequest[F[_], I](
     http: HttpEndpoint[I],
@@ -255,95 +243,85 @@ object NdjsonRestJsonBuilder {
         )
     }
 
-  /** Decodes the operation's input from metadata (path / query / headers) and, when the operation
-    * doesn't stream its body in, the JSON body.
+  /** Decodes the operation's input.
     *
-    * An operation that DOES stream its body in gets its payload from [[streamedBody]] instead, so
-    * only the metadata half is decoded here — reading the body to decode it would consume the very
-    * bytes the impl is about to be handed.
+    * Ordinarily this is smithy4s's own decoder, which reads metadata and body together exactly as
+    * `simpleRestJson` does. An operation that streams its body in cannot use it: that decoder
+    * consumes the request body to decode the payload, and those are the very bytes the impl is
+    * about to be handed. Such operations decode from metadata alone; the streamed payload member
+    * has no metadata binding, so it is simply absent from what the metadata decoder reads.
     */
   private def decodeInput[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
-    pathParams: Map[String, String],
-    request: Request[F],
-  ): F[I] = {
-    val metadata = toMetadata(pathParams, request)
+    codecs: UnaryServerCodecs[F, (Request[F], PathParams), Response[F], I, E, O],
+  ): (Request[F], PathParams) => F[I] =
+    if (endpoint.streamedInput.isEmpty)
+      (request, pathParams) => codecs.inputDecoder((request, pathParams))
+    else {
+      val decoder = Metadata.Decoder.fromSchema(endpoint.schema.input)
 
-    def fromMetadata[A](schema: Schema[A]): F[A] =
-      Metadata
-        .decode(metadata)(Metadata.Decoder.fromSchema(schema))
-        .liftTo[F]
-
-    def fromBody[A](schema: Schema[A]): F[A] =
-      request
-        .body
-        .compile
-        .to(Array)
-        .flatMap(bytes =>
-          Json.payloadCodecs.decoders.fromSchema(schema).decode(Blob(bytes)).liftTo[F]
-        )
-
-    HttpRestSchema(endpoint.schema.input) match {
-      case HttpRestSchema.Empty(value)      => value.pure[F]
-      case HttpRestSchema.OnlyMetadata(sch) => fromMetadata(sch)
-      case HttpRestSchema.OnlyBody(sch)     =>
-        if (endpoint.streamedInput.isDefined)
-          fromMetadata(endpoint.schema.input)
-        else
-          fromBody(sch)
-      case HttpRestSchema.MetadataAndBody(metadataSchema, bodySchema) =>
-        if (endpoint.streamedInput.isDefined)
-          fromMetadata(metadataSchema).map(meta => PartialData.unsafeReconcile(meta))
-        else
-          (fromMetadata(metadataSchema), fromBody(bodySchema)).mapN((meta, body) =>
-            PartialData.unsafeReconcile(meta, body)
-          )
+      (request, pathParams) => Metadata.decode(metadataOf(request, pathParams))(decoder).liftTo[F]
     }
-  }
 
-  private def toMetadata[F[_]](pathParams: Map[String, String], request: Request[F]): Metadata =
+  /** The request's metadata, with the path parameters this endpoint matched.
+    *
+    * Only needed on the streamed-input path — everywhere else smithy4s's own decoder builds this
+    * itself, from the same pieces.
+    */
+  private def metadataOf[F[_]](request: Request[F], pathParams: PathParams): Metadata =
     Metadata(
       path = pathParams,
       // smithy4s models a valueless query param (`?flag`) as a None, which http4s's
       // `multiParams` has already flattened away; re-wrap so the shapes line up.
       query = request.uri.query.multiParams.map((k, vs) => (k, vs.map(Some(_)))),
-      headers = request
-        .headers
-        .headers
-        .groupBy(h => CaseInsensitive(h.name.toString))
-        .map((name, hs) => (name, hs.map(_.value).toSeq)),
+      headers = NdjsonRestJsonCodecs.headersOf(request),
     )
 
   /** Encodes the response: NDJSON when the operation streams its output, plain JSON otherwise.
     *
-    * In the streaming case the status is fixed by `@http(code:)` and committed before the first
-    * element is pulled, which is what lets a client render progress — and why a later failure has
-    * to travel as an element rather than a status.
+    * The non-streaming case is smithy4s's own encoder, so `@httpResponseCode` and `@httpHeader`
+    * bindings on the output are honoured. The streaming case cannot use it — that encoder wants a
+    * whole body up front — so the envelope's metadata is encoded separately and the body is framed
+    * as NDJSON. The status is fixed by `@http(code:)` and committed before the first element is
+    * pulled, which is what lets a client render progress, and why a later failure has to travel as
+    * an element rather than a status.
     */
-  private def encodeOutput[Op[_, _, _, _, _], F[_], I, E, O, SI, SO](
+  private def encodeOutput[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
     http: HttpEndpoint[I],
-    output: O,
-    stream: Stream[F, SO],
-  ): Response[F] = {
-    val status = Status.fromInt(http.code).getOrElse(Status.Ok)
-
+    codecs: UnaryServerCodecs[F, (Request[F], PathParams), Response[F], I, E, O],
+  ): (O, Stream[F, SO]) => F[Response[F]] =
     endpoint
       .streamedOutput
-      .fold {
-        val blob = Json.payloadCodecs.encoders.fromSchema(endpoint.schema.output).encode(output)
-        Response[F](
-          status = status,
-          headers = Headers(`Content-Type`(MediaType.application.json)),
-          body = Stream.chunk(Chunk.array(blob.toArray)),
-        )
-      } { streamed =>
-        Response[F](
-          status = status,
-          headers = Headers(`Content-Type`(Ndjson.mediaType)),
-          body = Ndjson.encode(stream, Json.payloadCodecs.encoders.fromSchema(streamed.schema)),
-        )
+      .fold[(O, Stream[F, SO]) => F[Response[F]]]((output, _) => codecs.outputEncoder(output)) {
+        streamed =>
+          val status = Status.fromInt(http.code).getOrElse(Status.Ok)
+          val metadataEncoder = Metadata.Encoder.fromSchema(endpoint.schema.output)
+          val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
+
+          (output, stream) => {
+            val metadata = metadataEncoder.encode(output)
+
+            Response[F](
+              status = metadata.statusCode.flatMap(Status.fromInt(_).toOption).getOrElse(status),
+              headers = ndjsonHeaders(metadata),
+              body = Ndjson.encode(stream, elementEncoder),
+            ).pure[F]
+          }
       }
-  }
+
+  /** The response headers for a streamed output: whatever the envelope's `@httpHeader` members
+    * bind, plus the NDJSON content type.
+    *
+    * The content type is `put` last so it wins: the framing is the protocol's to decide, not the
+    * envelope's.
+    */
+  private def ndjsonHeaders(metadata: Metadata): Headers =
+    Headers(
+      metadata
+        .headers
+        .toList
+        .flatMap((name, values) => values.map(value => Header.Raw(CIString(name.toString), value)))
+    ).put(`Content-Type`(Ndjson.mediaType))
 
 }
