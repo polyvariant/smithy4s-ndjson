@@ -15,6 +15,14 @@ pull_request_rules:
   - status-success=Test (ubuntu-22.04, 3, temurin@11, rootJVM)
   actions:
     merge: {}
+- name: Label core PRs
+  conditions:
+  - files~=^modules/core/
+  actions:
+    label:
+      add:
+      - core
+      remove: []
 - name: Label http4s PRs
   conditions:
   - files~=^modules/http4s/

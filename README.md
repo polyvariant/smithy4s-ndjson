@@ -21,8 +21,10 @@ The protocol trait is published separately, as a plain Java artifact with no Sca
 libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol" % "0.1.1"
 ```
 
-Scala users don't need it explicitly: `smithy4s-ndjson-http4s` brings it along, and the trait
-resolves off the classpath via `META-INF/smithy`.
+Scala users don't need it explicitly. `smithy4s-ndjson-http4s` depends on `smithy4s-ndjson-core`,
+which carries the generated Scala for the trait and records the protocol as a `smithy4sDependencies`
+entry in its jar manifest — so smithy4s's build plugins pull the protocol onto your codegen model
+path on their own, and the trait resolves off the classpath via `META-INF/smithy`.
 
 ## The protocol
 
