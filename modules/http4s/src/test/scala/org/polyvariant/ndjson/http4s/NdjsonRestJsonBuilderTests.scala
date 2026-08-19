@@ -125,6 +125,27 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
             )
           )
 
+      /** Echoes the decoded input back through a streamed element, so the codec-only traits are
+        * exercised on the request body and on an NDJSON line within one call.
+        */
+      def formats(stamp: smithy4s.time.Timestamp, renamed: String) =
+        _ =>
+          IO.pure(
+            (
+              FormatsOutput(),
+              Stream.emit(
+                Record.EntryCase(
+                  Entry(
+                    at = stamp,
+                    renamed = renamed,
+                    id = Uuid(java.util.UUID.fromString("6fa459ea-ee8a-3ca4-894e-db77e160355e")),
+                    day = Day(smithy4s.time.LocalDate.parse("2026-01-01").get),
+                  )
+                )
+              ),
+            )
+          )
+
       /** Echoes the path label back, proving metadata is still decoded when the body is streamed.
         */
       def tagged(tag: String, source: Option[String]) =
@@ -397,6 +418,45 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       bodyText(response).map { body =>
         expect(response.status == Status.Ok) && expect(body == """{"ok":"fine"}""")
       }
+    }
+  }
+
+  /** The regression these traits were added for.
+    *
+    * `@timestampFormat` and `@jsonName` only take effect if the protocol declares them, because the
+    * jsoniter hint mask is built from that declaration. Left out, neither errors — the input's
+    * timestamp is read as an epoch number instead of a date-time string, and `@jsonName` reverts to
+    * the member name — so this asserts on the bytes, in both directions, on one call.
+    */
+  test("codec-only traits apply to a unary body and to streamed elements alike") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/formats"))
+        // A date-time string, which only parses as a Timestamp if @timestampFormat is in the mask;
+        // and the @jsonName spelling, which is the only name the input accepts.
+        .withEntity("""{"stamp":"2026-01-01T00:00:00Z","renamed_in":"in"}""")
+    ).flatMap { response =>
+      lines(response).map { ls =>
+        expect(response.status == Status.Ok) &&
+        expect(
+          clue(ls) == List(
+            """{"entry":{"at":"2026-01-01T00:00:00Z","renamed_out":"in","id":"6fa459ea-ee8a-3ca4-894e-db77e160355e","day":"2026-01-01"}}"""
+          )
+        )
+      }
+    }
+  }
+
+  /** The other half of the same guarantee: the format is not merely accepted, it is required.
+    *
+    * Asserting on the failure's own message pins *why* it failed — a bare `isLeft` would also pass
+    * if the route stopped matching, which is the opposite of what this is meant to prove.
+    */
+  test("a unary timestamp sent as an epoch number is rejected, per @timestampFormat") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/formats"))
+        .withEntity("""{"stamp":1767225600,"renamed_in":"in"}""")
+    ).attempt.map { result =>
+      expect(clue(result.left.toOption.map(_.getMessage)).exists(_.contains(".stamp")))
     }
   }
 

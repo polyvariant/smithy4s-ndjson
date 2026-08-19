@@ -7,7 +7,11 @@ namespace org.polyvariant.ndjson
 ///
 /// Metadata bindings (path / query / header) and non-streaming payloads follow
 /// `alloy#simpleRestJson` exactly, so an operation without any `@streaming`
-/// member behaves identically under either protocol. On top of that, a
+/// member behaves identically under either protocol — which is why the trait
+/// list below is `simpleRestJson`'s, verbatim, plus `@streaming`. That list is
+/// not a summary of the promise, it is the mechanism: the JSON hint mask is
+/// derived from it, so a trait left out of it is ignored when a body is encoded
+/// or decoded, silently and in both directions. On top of that, a
 /// `@streaming` payload is framed by its shape — the same rule in both
 /// directions, so an operation reads a body exactly the way a peer writes one:
 ///
@@ -44,18 +48,42 @@ namespace org.polyvariant.ndjson
 /// traits of that kind is free to interpret them itself.
 @protocolDefinition(
     traits: [
+        // Every trait `alloy#simpleRestJson` declares, because that is the promise made above: an
+        // operation with no `@streaming` member must behave identically under either protocol, and
+        // this list is exactly what makes that true. `hintMask` is derived from it, so a trait left
+        // out here is silently ignored when a body is encoded or decoded — a missing
+        // `@timestampFormat` doesn't fail loudly, it just writes an epoch number where the peer
+        // expects a date-time string. Keep this in sync when alloy adds one.
+        smithy.api#default
+        smithy.api#error
         smithy.api#http
-        smithy.api#httpPayload
+        smithy.api#httpError
+        smithy.api#httpHeader
         smithy.api#httpLabel
+        smithy.api#httpPayload
+        smithy.api#httpPrefixHeaders
         smithy.api#httpQuery
         smithy.api#httpQueryParams
-        smithy.api#httpHeader
-        smithy.api#httpPrefixHeaders
-        smithy.api#httpError
-        smithy.api#error
-        smithy.api#streaming
-        smithy.api#default
+        smithy.api#httpResponseCode
+        smithy.api#jsonName
+        smithy.api#length
+        smithy.api#pattern
+        smithy.api#range
         smithy.api#required
+        smithy.api#timestampFormat
+        alloy#uuidFormat
+        alloy#discriminated
+        alloy#nullable
+        alloy#untagged
+        alloy#jsonUnknown
+        alloy#openEnum
+        alloy#durationSecondsFormat
+        alloy#dateFormat
+        alloy#localTimeFormat
+        alloy#offsetDateTimeFormat
+        alloy#preserveKeyOrder
+        // The one addition: what this protocol has that `simpleRestJson` does not.
+        smithy.api#streaming
     ]
 )
 @trait(selector: "service")

@@ -74,6 +74,8 @@ object MiddlewareScopeTests extends SimpleIOSuite {
         def ingest() = _ => IO.pure((IngestOutput(0), Stream.empty))
         def download(name: String) = _ => IO.pure((DownloadOutput(), Stream.empty))
         def relay() = _ => IO.pure((RelayOutput(), Stream.empty))
+        def formats(stamp: smithy4s.time.Timestamp, renamed: String) =
+          _ => IO.pure((FormatsOutput(), Stream.empty))
       }
 
     // Stands in for any request-scoped middleware: sets a value, then clears it once the handler

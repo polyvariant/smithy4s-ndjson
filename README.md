@@ -74,6 +74,12 @@ Metadata bindings (path / query / header) and non-streaming payloads follow `all
 exactly, so an operation without any `@streaming` member behaves identically under either protocol —
 a service may freely mix both kinds.
 
+That equivalence is why `@protocolDefinition` lists `simpleRestJson`'s traits verbatim, plus
+`@streaming`. The list isn't documentation: the JSON hint mask is derived from it, so a trait missing
+from it is ignored when a body is encoded or decoded — a dropped `@timestampFormat` writes an epoch
+number where a peer expects an RFC-3339 string, with no error on either side. A test asserts the two
+lists against each other, so alloy adding a trait fails the build rather than drifting quietly.
+
 On top of that, a `@streaming` payload is framed by its *shape*, and the same rule applies to both
 edges — so an operation reads a body exactly the way a peer writes one:
 

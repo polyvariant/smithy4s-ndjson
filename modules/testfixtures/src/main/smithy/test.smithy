@@ -2,6 +2,8 @@ $version: "2"
 
 namespace org.polyvariant.ndjson.test
 
+use alloy#dateFormat
+use alloy#uuidFormat
 use org.polyvariant.ndjson#ndjsonRestJson
 
 /// Exercises every shape the protocol admits, in one service: binary in, NDJSON
@@ -21,6 +23,7 @@ service TestService {
         Ingest
         Download
         Relay
+        Formats
     ]
 }
 
@@ -243,3 +246,63 @@ structure Failed {
     @required
     message: String
 }
+
+/// The traits whose effect lives purely in the JSON codec, on both paths at once.
+///
+/// These are the ones a `@protocolDefinition` list can omit silently: the hint mask is built from
+/// that list, so a trait absent from it doesn't fail — it just changes the bytes. A `@timestampFormat`
+/// left out writes an epoch number where a date-time string belongs, and `@jsonName` reverts to the
+/// member name. Both the unary body and the streamed elements go through the same masked codecs, so
+/// the operation exercises them together.
+@http(method: "POST", uri: "/formats", code: 200)
+operation Formats {
+    input := {
+        /// Without `@timestampFormat` in the protocol's trait list this reads as an epoch second,
+        /// so a date-time string fails to decode — which is how the omission originally surfaced.
+        @required
+        @timestampFormat("date-time")
+        stamp: Timestamp
+
+        @required
+        @jsonName("renamed_in")
+        renamed: String
+    }
+
+    output := {
+        @httpPayload
+        @required
+        record: Record
+    }
+}
+
+/// Streamed, so the mask is exercised on the NDJSON path too — one of these per line.
+@streaming
+union Record {
+    entry: Entry
+}
+
+structure Entry {
+    /// `@timestampFormat` is the trait whose omission originally surfaced this: without it in the
+    /// mask the value is written as an epoch second, not an RFC-3339 string.
+    @required
+    @timestampFormat("date-time")
+    at: Timestamp
+
+    @required
+    @jsonName("renamed_out")
+    renamed: String
+
+    @required
+    id: Uuid
+
+    @required
+    day: Day
+}
+
+/// `alloy#uuidFormat` and `alloy#dateFormat` are shape-level traits, so the members above carry
+/// them via these aliases rather than directly.
+@uuidFormat
+string Uuid
+
+@dateFormat
+string Day
