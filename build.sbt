@@ -58,9 +58,14 @@ val commonSettings = Seq(
 lazy val protocol = project
   .in(file("modules/protocol"))
   .enablePlugins(SmithyTraitCodegenPlugin)
-  .disablePlugins(MimaPlugin)
   .settings(
     name := "smithy4s-ndjson-protocol",
+    // No previous release to check against yet. Note this is `tlMimaPreviousVersions := Set.empty`
+    // and *not* `disablePlugins(MimaPlugin)`: sbt-typelevel's `TypelevelPlugin` transitively
+    // requires `MimaPlugin`, so disabling the latter also switches off `TypelevelSonatypePlugin` —
+    // which is what sets `publishTo`. The module then fails to publish with "Repository for
+    // publishing is not specified", but only on a release run, long after CI has gone green.
+    tlMimaPreviousVersions := Set.empty,
     crossPaths := false,
     autoScalaLibrary := false,
     // The trait is built only from shapes in `smithy.api`, so no extra model dependencies are
