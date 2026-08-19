@@ -82,16 +82,89 @@ lazy val protocol = project
     smithyTraitCodegenNamespace := "org.polyvariant.ndjson",
   )
 
-/** Makes `protocol`'s trait visible to smithy4s codegen in this build.
+/** Puts `protocol`'s trait on the codegen model path, using the in-build artifact rather than a
+  * resolved one.
   *
   * `smithy4sInternalDependenciesAsJars` doesn't include jars from the "smithy4s" configuration, so
-  * an ordinary `dependsOn` isn't enough to put the protocol trait on the codegen model path — this
-  * is the in-build equivalent of a `% Smithy4s`-scoped dependency. Downstream users don't need any
-  * of this: for them the trait arrives on the ordinary classpath, via `META-INF/smithy`.
+  * an ordinary `dependsOn` isn't enough — this is the in-build equivalent of a `% Smithy4s`-scoped
+  * dependency, and it is what lets the modules below build against an unreleased protocol change in
+  * the same commit — including the very first one, before the protocol has ever been published.
+  *
+  * Downstream users need none of this: the trait reaches them on the ordinary classpath via
+  * `META-INF/smithy`, pulled in by `core`'s `smithy4sDependencies` manifest entry.
   */
 lazy val buildTimeProtocolDependency =
   Compile / smithy4sInternalDependenciesAsJars ++=
     (protocol / Compile / fullClasspathAsJars).value.map(_.data)
+
+/** Keeps the protocol namespace from being generated a second time.
+  *
+  * The trait has to be on the model path of every module that runs codegen (an annotated service
+  * can't be read without it), but only `core` should emit Scala for it — otherwise each consumer
+  * gets its own copy of `org.polyvariant.ndjson.NdjsonRestJson` and downstream classpaths end up
+  * with duplicates of one fully-qualified class.
+  *
+  * This uses the deprecated sbt key rather than its suggested replacement, the `smithy4sCodegen`
+  * Smithy metadata, on purpose: metadata applies to the assembled model as a whole, so declaring
+  * the exclusion in the protocol's own `.smithy` would also suppress generation in `core`, which is
+  * the one module that must generate it. The two sources are unioned, not overridden, so there is
+  * no per-module way to express this in metadata. Revisit if the key is actually removed.
+  */
+lazy val protocolGeneratedByCore =
+  Compile / smithy4sExcludedNamespaces := List("org.polyvariant.ndjson")
+
+/** Records the protocol as a smithy-level dependency of `core` in its jar manifest, so a downstream
+  * build pulls the trait onto its own codegen model path automatically.
+  *
+  * The smithy4s plugin does this for you, but only for dependencies declared `% Smithy4s` in
+  * `libraryDependencies` — which an in-build module can't be, since nothing has published the
+  * current snapshot yet and the `% Smithy4s` entry would fail to resolve. So the entry is written
+  * directly; see https://github.com/disneystreaming/smithy4s/issues/1749 for the sbt setting that
+  * would make this unnecessary.
+  *
+  * The value format is the plugin's own (`moduleIdEncode`): comma-separated `org:name:revision`,
+  * with no Scala suffix because `protocol` sets `crossPaths := false`. `packageOptions` is appended
+  * to rather than assigned, so the plugin's own entry for `core`'s external `% Smithy4s`
+  * dependencies (currently none) would survive alongside this one.
+  */
+lazy val protocolManifestEntry =
+  Compile / packageBin / packageOptions += {
+    val manifest = new java.util.jar.Manifest()
+    manifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0")
+    manifest
+      .getMainAttributes()
+      .putValue(
+        "smithy4sDependencies",
+        s"org.polyvariant:smithy4s-ndjson-protocol:${version.value}",
+      )
+    Package.JarManifest(manifest)
+  }
+
+/** The generated Scala view of the protocol trait: `org.polyvariant.ndjson.NdjsonRestJson`.
+  *
+  * Its own module because that class must be generated exactly once in the build. Generating it
+  * from both `http4s` and `testFixtures` — which is what happened while each ran codegen over the
+  * protocol namespace itself — puts two copies of the same fully-qualified class on a downstream
+  * classpath.
+  *
+  * Note this deliberately does NOT `.dependsOn(protocol)`. `protocol` is a Java-only artifact
+  * (`crossPaths := false`, `autoScalaLibrary := false`), so a project dependency would pin this
+  * module — and everything downstream of it — to the JVM, foreclosing a JS/Native cross-build, and
+  * would put a suffix-less artifact in the published POM. The trait is a build-time input only: it
+  * reaches codegen via `buildTimeProtocolDependency`, and reaches downstream builds as the
+  * `smithy4sDependencies` manifest entry written by `protocolManifestEntry`.
+  */
+lazy val core = project
+  .in(file("modules/core"))
+  .enablePlugins(Smithy4sCodegenPlugin)
+  .settings(
+    name := "smithy4s-ndjson-core",
+    commonSettings,
+    tlMimaPreviousVersions := Set.empty,
+    libraryDependencies += "com.disneystreaming.smithy4s" %% "smithy4s-core" % smithy4sVersion,
+    buildTimeProtocolDependency,
+    protocolManifestEntry,
+  )
 
 /** The http4s interpreter for the protocol: `NdjsonRestJsonBuilder`, the counterpart to smithy4s's
   * `SimpleRestJsonBuilder` for services that stream.
@@ -99,7 +172,7 @@ lazy val buildTimeProtocolDependency =
 lazy val http4s = project
   .in(file("modules/http4s"))
   .enablePlugins(Smithy4sCodegenPlugin)
-  .dependsOn(protocol, testFixtures % Test)
+  .dependsOn(core, testFixtures % Test)
   .settings(
     name := "smithy4s-ndjson-http4s",
     commonSettings,
@@ -113,6 +186,7 @@ lazy val http4s = project
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
     ),
     buildTimeProtocolDependency,
+    protocolGeneratedByCore,
   )
 
 /** A service exercising every shape the protocol admits (binary in, NDJSON out, plain JSON,
@@ -127,15 +201,13 @@ lazy val testFixtures = project
   .in(file("modules/testfixtures"))
   .enablePlugins(Smithy4sCodegenPlugin)
   .disablePlugins(MimaPlugin)
-  .dependsOn(protocol)
+  .dependsOn(core)
   .settings(
     name := "smithy4s-ndjson-testfixtures",
     commonSettings,
     publish / skip := true,
-    libraryDependencies ++= Seq(
-      "com.disneystreaming.smithy4s" %% "smithy4s-core" % smithy4sVersion
-    ),
     buildTimeProtocolDependency,
+    protocolGeneratedByCore,
   )
 
-lazy val root = tlCrossRootProject.aggregate(protocol, http4s, testFixtures)
+lazy val root = tlCrossRootProject.aggregate(protocol, core, http4s, testFixtures)
