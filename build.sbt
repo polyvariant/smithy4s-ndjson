@@ -1,4 +1,4 @@
-ThisBuild / tlBaseVersion := "0.2"
+ThisBuild / tlBaseVersion := "0.3"
 ThisBuild / organization := "org.polyvariant"
 ThisBuild / organizationName := "Polyvariant"
 ThisBuild / startYear := Some(2026)
@@ -154,6 +154,22 @@ lazy val protocolManifestEntry =
     Package.JarManifest(manifest)
   }
 
+/** Points codegen at the Smithy sources in the shared (`CrossType.Pure`) source base.
+  *
+  * `smithy4sInputDirs` is derived from `sourceDirectory`, which a crossProject makes platform-local
+  * — so under `CrossType.Pure` it resolves to `modules/X/.jvm/src/main/smithy` and
+  * `modules/X/.native/src/main/smithy`, neither of which exists. A Smithy model is not
+  * platform-specific, so both platforms read the one copy at `modules/X/src/main/smithy` instead.
+  *
+  * The `src_managed` entry is kept: the plugin appends generated Smithy there per platform, and
+  * dropping it would break codegen that produces Smithy as an intermediate.
+  */
+lazy val sharedSmithySources =
+  Compile / smithy4sInputDirs := Seq(
+    (ThisProject / baseDirectory).value.getParentFile() / "src" / "main" / "smithy",
+    (Compile / sourceManaged).value / "smithy",
+  )
+
 /** The generated Scala view of the protocol trait: `org.polyvariant.ndjson.NdjsonRestJson`.
   *
   * Its own module because that class must be generated exactly once in the build. Generating it
@@ -163,19 +179,22 @@ lazy val protocolManifestEntry =
   *
   * Note this deliberately does NOT `.dependsOn(protocol)`. `protocol` is a Java-only artifact
   * (`crossPaths := false`, `autoScalaLibrary := false`), so a project dependency would pin this
-  * module — and everything downstream of it — to the JVM, foreclosing a JS/Native cross-build, and
-  * would put a suffix-less artifact in the published POM. The trait is a build-time input only: it
-  * reaches codegen via `buildTimeProtocolDependency`, and reaches downstream builds as the
+  * module — and everything downstream of it — to the JVM, which is what makes the Native
+  * cross-build below possible; it would also put a suffix-less artifact in the published POM. The
+  * trait is a build-time input only: it reaches codegen via `buildTimeProtocolDependency` (as a
+  * classpath of jars, which has no platform), and reaches downstream builds as the
   * `smithy4sDependencies` manifest entry written by `protocolManifestEntry`.
   */
-lazy val core = project
+lazy val core = crossProject(JVMPlatform, NativePlatform)
+  .crossType(CrossType.Pure)
   .in(file("modules/core"))
   .enablePlugins(Smithy4sCodegenPlugin)
   .settings(
     name := "smithy4s-ndjson-core",
     commonSettings,
     tlMimaPreviousVersions := Set.empty,
-    libraryDependencies += "com.disneystreaming.smithy4s" %% "smithy4s-core" % smithy4sVersion,
+    libraryDependencies += "com.disneystreaming.smithy4s" %%% "smithy4s-core" % smithy4sVersion,
+    sharedSmithySources,
     buildTimeProtocolDependency,
     protocolManifestEntry,
   )
@@ -183,7 +202,8 @@ lazy val core = project
 /** The http4s interpreter for the protocol: `NdjsonRestJsonBuilder`, the counterpart to smithy4s's
   * `SimpleRestJsonBuilder` for services that stream.
   */
-lazy val http4s = project
+lazy val http4s = crossProject(JVMPlatform, NativePlatform)
+  .crossType(CrossType.Pure)
   .in(file("modules/http4s"))
   .enablePlugins(Smithy4sCodegenPlugin)
   .dependsOn(core, testFixtures % Test)
@@ -191,17 +211,28 @@ lazy val http4s = project
     name := "smithy4s-ndjson-http4s",
     commonSettings,
     libraryDependencies ++= Seq(
-      "com.disneystreaming.smithy4s" %% "smithy4s-core" % smithy4sVersion,
-      "com.disneystreaming.smithy4s" %% "smithy4s-json" % smithy4sVersion,
-      "com.disneystreaming.smithy4s" %% "smithy4s-http4s" % smithy4sVersion,
-      "org.http4s" %% "http4s-core" % http4sVersion,
-      "co.fs2" %% "fs2-core" % fs2Version,
-      "org.typelevel" %% "weaver-cats" % weaverVersion % Test,
-      "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
+      "com.disneystreaming.smithy4s" %%% "smithy4s-core" % smithy4sVersion,
+      "com.disneystreaming.smithy4s" %%% "smithy4s-json" % smithy4sVersion,
+      "com.disneystreaming.smithy4s" %%% "smithy4s-http4s" % smithy4sVersion,
+      "org.http4s" %%% "http4s-core" % http4sVersion,
+      "co.fs2" %%% "fs2-core" % fs2Version,
+      "org.typelevel" %%% "weaver-cats" % weaverVersion % Test,
+      "org.http4s" %%% "http4s-dsl" % http4sVersion % Test,
     ),
+    sharedSmithySources,
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
   )
+  // The Native artifacts are new as of this cross-build, so there is no published
+  // `smithy4s-ndjson-http4s_native0.5_3` for MiMa to compare against — left at the inherited value,
+  // `mimaPreviousClassfiles` fails to resolve 0.2.x and the Native CI job errors before it even
+  // gets to the check. The JVM platform keeps its baseline, which is where the compatibility
+  // guarantee currently lives.
+  //
+  // This is why the release that carries this change is 0.3.0: it publishes both platforms at once,
+  // so from 0.3.1 onwards the two share a single baseline and this exemption can be deleted rather
+  // than lingering as a permanent hole in the Native check.
+  .nativeSettings(tlMimaPreviousVersions := Set.empty)
 
 /** A service exercising every shape the protocol admits (binary in, NDJSON out, plain JSON,
   * metadata bindings), so the interpreter is tested against real codegen output rather than a
@@ -211,7 +242,8 @@ lazy val http4s = project
   * `Test / smithy4sInputDirs` in `http4s` is accepted but never runs. Keeping it separate also
   * keeps the fixtures out of the published jar.
   */
-lazy val testFixtures = project
+lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
+  .crossType(CrossType.Pure)
   .in(file("modules/testfixtures"))
   .enablePlugins(Smithy4sCodegenPlugin)
   .disablePlugins(MimaPlugin)
@@ -220,8 +252,30 @@ lazy val testFixtures = project
     name := "smithy4s-ndjson-testfixtures",
     commonSettings,
     publish / skip := true,
+    sharedSmithySources,
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
   )
 
-lazy val root = tlCrossRootProject.aggregate(protocol, core, http4s, testFixtures)
+/** `protocol` is aggregated only into `rootJVM`, not into every platform root.
+  *
+  * It is a single Java artifact with no platform of its own, so `tlCrossRootProject`'s
+  * `.aggregate(protocol)` — which adds a plain project to *all* platform roots — would have the
+  * Native CI job build and publish the same jar the JVM job already does. Attaching it to `rootJVM`
+  * alone keeps it built and released exactly once. The Native modules still get the trait: it
+  * reaches their codegen through `buildTimeProtocolDependency`, which is a direct classpath
+  * reference and needs no aggregation.
+  */
+lazy val root = tlCrossRootProject.aggregate(core, http4s, testFixtures)
+
+/** Attaches `protocol` to the JVM root only.
+  *
+  * `tlCrossRootProject`'s own `.aggregate` adds a plain (non-cross) project to *every* platform
+  * root, which would have the Native CI job build — and the release job publish — the very same
+  * Java jar the JVM job already handles. `protocol` has no platform of its own, so it belongs to
+  * exactly one root.
+  *
+  * The Native modules still see the trait: it reaches their codegen through
+  * `buildTimeProtocolDependency`, a direct classpath reference that needs no aggregation.
+  */
+lazy val rootJVMWithProtocol = root.jvm.aggregate(protocol)
