@@ -64,7 +64,12 @@ lazy val protocol = project
   .enablePlugins(SmithyTraitCodegenPlugin)
   .settings(
     name := "smithy4s-ndjson-protocol",
-    // No previous release to check against yet. Note this is `tlMimaPreviousVersions := Set.empty`
+    // No previous release to check against yet — and note that 0.3.0 is *not* one: this module
+    // dropped out of that release when it was briefly aggregated from `rootJVM` instead of the
+    // root that `tlCiRelease` publishes (see `root` at the bottom of this file). So the first
+    // version to compare against is whichever release next publishes it.
+    //
+    // Note this is `tlMimaPreviousVersions := Set.empty`
     // and *not* `disablePlugins(MimaPlugin)`: sbt-typelevel's `TypelevelPlugin` transitively
     // requires `MimaPlugin`, so disabling the latter also switches off `TypelevelSonatypePlugin` —
     // which is what sets `publishTo`. The module then fails to publish with "Repository for
@@ -223,16 +228,6 @@ lazy val http4s = crossProject(JVMPlatform, NativePlatform)
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
   )
-  // The Native artifacts are new as of this cross-build, so there is no published
-  // `smithy4s-ndjson-http4s_native0.5_3` for MiMa to compare against — left at the inherited value,
-  // `mimaPreviousClassfiles` fails to resolve 0.2.x and the Native CI job errors before it even
-  // gets to the check. The JVM platform keeps its baseline, which is where the compatibility
-  // guarantee currently lives.
-  //
-  // This is why the release that carries this change is 0.3.0: it publishes both platforms at once,
-  // so from 0.3.1 onwards the two share a single baseline and this exemption can be deleted rather
-  // than lingering as a permanent hole in the Native check.
-  .nativeSettings(tlMimaPreviousVersions := Set.empty)
 
 /** A service exercising every shape the protocol admits (binary in, NDJSON out, plain JSON,
   * metadata bindings), so the interpreter is tested against real codegen output rather than a
@@ -257,25 +252,22 @@ lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
     protocolGeneratedByCore,
   )
 
-/** `protocol` is aggregated only into `rootJVM`, not into every platform root.
+/** `protocol` is aggregated by the root, exactly as it was before the Native cross-build.
   *
-  * It is a single Java artifact with no platform of its own, so `tlCrossRootProject`'s
-  * `.aggregate(protocol)` — which adds a plain project to *all* platform roots — would have the
-  * Native CI job build and publish the same jar the JVM job already does. Attaching it to `rootJVM`
-  * alone keeps it built and released exactly once. The Native modules still get the trait: it
-  * reaches their codegen through `buildTimeProtocolDependency`, which is a direct classpath
-  * reference and needs no aggregation.
-  */
-lazy val root = tlCrossRootProject.aggregate(core, http4s, testFixtures)
-
-/** Attaches `protocol` to the JVM root only.
+  * `tlCrossRootProject.aggregate` takes cross-projects; a plain project goes through `.configure`,
+  * which attaches it to the top-level `root` and to each platform root alike. The top-level one is
+  * what matters: `sbt tlCiRelease` publishes from `root`, so anything not aggregated there is
+  * silently left out of the release.
   *
-  * `tlCrossRootProject`'s own `.aggregate` adds a plain (non-cross) project to *every* platform
-  * root, which would have the Native CI job build — and the release job publish — the very same
-  * Java jar the JVM job already handles. `protocol` has no platform of its own, so it belongs to
-  * exactly one root.
+  * That is not hypothetical. 0.3.0 shipped `core` and `http4s` without `smithy4s-ndjson-protocol`,
+  * because this was briefly attached to `rootJVM` alone — an attempt to stop the Native `Test` job
+  * rebuilding a Java jar the JVM job already builds. That duplicate build is real but cheap;
+  * dropping an artifact from a release is neither, and sbt offers no way to subtract an aggregate
+  * from one platform root after the fact. So the redundant build stays.
   *
-  * The Native modules still see the trait: it reaches their codegen through
+  * The Native modules see the trait regardless: it reaches their codegen through
   * `buildTimeProtocolDependency`, a direct classpath reference that needs no aggregation.
   */
-lazy val rootJVMWithProtocol = root.jvm.aggregate(protocol)
+lazy val root = tlCrossRootProject
+  .aggregate(core, http4s, testFixtures)
+  .configure(_.aggregate(protocol))
