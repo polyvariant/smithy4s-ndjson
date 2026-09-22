@@ -28,7 +28,7 @@ ThisBuild / githubWorkflowBuild ~= {
   }
 }
 
-val smithy4sVersion = "0.19.11"
+val smithy4sVersion = "0.19.12"
 // Only the generated trait classes need this, and only against the stable parts of the model API
 // (`AbstractTrait`, `ShapeId`, `Node`). A consumer whose build also pulls an older smithy-model —
 // via alloy, say — resolves to the newer of the two, which is the direction Smithy tooling
