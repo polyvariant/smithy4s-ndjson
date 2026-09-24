@@ -38,7 +38,7 @@ val smithyVersion = "1.73.0"
 // time; it is not a dependency of anything published. Keep at or above the alloy that the smithy4s
 // version above builds against, so the trait list can't name a trait that smithy4s doesn't know.
 val alloyVersion = "0.3.40"
-val http4sVersion = "0.23.36"
+val http4sVersion = "0.23.37"
 val fs2Version = "3.14.0"
 val weaverVersion = "0.13.0"
 
