@@ -33,7 +33,7 @@ val smithy4sVersion = "0.19.12"
 // (`AbstractTrait`, `ShapeId`, `Node`). A consumer whose build also pulls an older smithy-model —
 // via alloy, say — resolves to the newer of the two, which is the direction Smithy tooling
 // supports: a newer model library reads older models.
-val smithyVersion = "1.73.0"
+val smithyVersion = "1.74.0"
 // Only needed to resolve the `alloy#*` shape IDs in the protocol's trait list at trait-codegen
 // time; it is not a dependency of anything published. Keep at or above the alloy that the smithy4s
 // version above builds against, so the trait list can't name a trait that smithy4s doesn't know.
