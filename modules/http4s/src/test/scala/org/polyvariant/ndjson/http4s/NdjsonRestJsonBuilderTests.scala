@@ -210,6 +210,15 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     }
   }
 
+  test("a query parameter that fails to decode is a 400, even on an operation without errors") {
+    run(Request[IO](Method.GET, Uri.unsafeFromString("/greet/world?loud=maybe"))).flatMap {
+      response =>
+        bodyText(response).map { body =>
+          expect(response.status == Status.BadRequest) && expect(clue(body).contains("loud"))
+        }
+    }
+  }
+
   test("a streamed output is framed as one JSON value per line") {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/echo"))
@@ -318,13 +327,13 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     }
   }
 
-  test("a malformed NDJSON line fails the request rather than truncating the stream") {
+  test("a malformed NDJSON line is a 400 rather than a truncated stream") {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/ingest"))
         .withEntity("""{"add":{"key":"a"}}
                       |not json
                       |""".stripMargin)
-    ).attempt.map(result => expect(result.isLeft))
+    ).map(response => expect(response.status == Status.BadRequest))
   }
 
   test("a streamed blob output is written verbatim, as octet-stream") {
@@ -448,15 +457,17 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
 
   /** The other half of the same guarantee: the format is not merely accepted, it is required.
     *
-    * Asserting on the failure's own message pins *why* it failed — a bare `isLeft` would also pass
-    * if the route stopped matching, which is the opposite of what this is meant to prove.
+    * Asserting on the body pins *why* it was rejected — a bare 400 would also pass if some other
+    * part of the input stopped decoding, which is not what this is meant to prove.
     */
-  test("a unary timestamp sent as an epoch number is rejected, per @timestampFormat") {
+  test("a unary timestamp sent as an epoch number is rejected with a 400, per @timestampFormat") {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/formats"))
         .withEntity("""{"stamp":1767225600,"renamed_in":"in"}""")
-    ).attempt.map { result =>
-      expect(clue(result.left.toOption.map(_.getMessage)).exists(_.contains(".stamp")))
+    ).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.BadRequest) && expect(clue(body).contains(".stamp"))
+      }
     }
   }
 

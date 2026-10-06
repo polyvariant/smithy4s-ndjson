@@ -33,6 +33,8 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import smithy4s.Endpoint
 import smithy4s.Service
+import smithy4s.codecs.PayloadError
+import smithy4s.http.HttpContractError
 import smithy4s.http.HttpEndpoint
 import smithy4s.http.HttpMethod
 import smithy4s.http.Metadata
@@ -163,15 +165,19 @@ object NdjsonRestJsonBuilder {
     }
   }
 
-  /** Encodes an operation's declared errors (`errors: [...]`) as HTTP responses.
+  /** Encodes an operation's declared errors (`errors: [...]`), and requests that fail to decode, as
+    * HTTP responses.
     *
-    * The encoding itself is smithy4s's — status from `@httpError`, body and any `@httpHeader`
-    * bindings from the error's own schema, plus the error-type discriminator header — but which
-    * throwables it applies to is decided here rather than by the codecs' `throwableEncoder`.
-    * `liftError` returns `None` for anything the operation does not declare, and those propagate
-    * untouched so the surrounding middleware still sees them and can turn them into a 500 itself.
-    * Swallowing them into a canned 500 here would hide server faults from exactly the layer that
-    * exists to observe them.
+    * The encoding itself is smithy4s's. A declared error gets the status from its `@httpError`, its
+    * body and any `@httpHeader` bindings from its own schema, plus the error-type discriminator
+    * header — the codecs' `errorEncoder`. A request that fails to decode gets the 400 that
+    * `SimpleRestJsonBuilder` answers it with — the codecs' `throwableEncoder`, which encodes
+    * `HttpContractError` alone. That is part of behaving like `simpleRestJson` for everything that
+    * does not stream, and it applies whether or not the operation declares any errors.
+    *
+    * Anything else propagates untouched — `throwableEncoder` re-raises it — so the surrounding
+    * middleware still sees it and can turn it into a 500 itself. Swallowing it into a canned 500
+    * here would hide server faults from exactly the layer that exists to observe them.
     *
     * This can only help a ''non-streaming'' failure. Once an operation has begun streaming, the
     * status is already committed and there is nowhere left to put an error; such failures have to
@@ -182,15 +188,12 @@ object NdjsonRestJsonBuilder {
     codecs: UnaryServerCodecs[F, (Request[F], PathParams), Response[F], I, E, O],
     response: F[Response[F]],
   ): F[Response[F]] =
-    endpoint
-      .error
-      .fold(response) { errorSchema =>
-        response.recoverWith { throwable =>
-          errorSchema
-            .liftError(throwable)
-            .fold(throwable.raiseError[F, Response[F]])(codecs.errorEncoder)
-        }
-      }
+    response.recoverWith { throwable =>
+      endpoint
+        .error
+        .flatMap(_.liftError(throwable))
+        .fold(codecs.throwableEncoder(throwable))(codecs.errorEncoder)
+    }
 
   private def matchRequest[F[_], I](
     http: HttpEndpoint[I],
@@ -210,6 +213,11 @@ object NdjsonRestJsonBuilder {
     * newline-delimited JSON and decoded one value per line. Both directions agree on this rule, so
     * an operation reads its input exactly the way a peer would write it as output.
     *
+    * A line that fails to decode is raised as an `HttpContractError` — the error a malformed unary
+    * body raises — so an operation that reads its input before it starts responding answers it with
+    * the same 400 (see `encodeErrors`). If the read occurs later, while the response is being streamed,
+    * it will fail the stream.
+    *
     * `SI` is `Nothing` when the operation streams nothing in, making the empty stream the only
     * inhabitant that could be passed.
     */
@@ -223,7 +231,13 @@ object NdjsonRestJsonBuilder {
         StreamFraming.fromSchema(streamed.schema) match {
           case StreamFraming.Raw(wrap, _) => request.body.map(wrap)
           case StreamFraming.Ndjson()     =>
-            Ndjson.decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
+            Ndjson
+              .decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
+              .handleErrorWith {
+                case error: PayloadError =>
+                  Stream.raiseError[F](HttpContractError.fromPayloadError(error))
+                case error => Stream.raiseError[F](error)
+              }
         }
       }
 
