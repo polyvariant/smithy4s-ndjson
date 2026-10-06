@@ -192,6 +192,29 @@ so a request for an unknown path falls through untouched and these routes compos
 Note the scope caveat above: middleware built on request-scoped state sees that state while the
 operation starts, but not while the response stream is drained.
 
+## OpenAPI
+
+smithy4s generates an OpenAPI spec for each service at build time — through alloy, which only knows
+`alloy#simpleRestJson`. `smithy4s-ndjson-openapi` teaches that conversion this protocol: put it on
+the codegen model path, and every `@ndjsonRestJson` service gets a spec too, which
+`smithy4s-http4s-swagger` serves like any other.
+
+```scala
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-openapi" % "<version>" % Smithy4s
+```
+
+Everything that doesn't stream is described exactly as alloy describes `simpleRestJson`. A
+`@streaming` payload is described by its framing:
+
+|                    | media type                                        | schema                      |
+| ------------------ | ------------------------------------------------- | --------------------------- |
+| `@streaming blob`  | its `@mediaType`, else `application/octet-stream` | a binary string             |
+| `@streaming union` | `application/x-ndjson`                            | the union: one line's worth |
+
+Like the protocol, it's a plain Java artifact with no Scala suffix — note the single `%`. It runs
+inside the code generator, on whichever Scala version that uses (sbt 1 and sbt 2 already differ),
+so it calls alloy only through Java signatures, which every Scala build of alloy shares.
+
 ## Platform support
 
 JVM only for now. Nothing in the interpreter is JVM-specific, so JS and Native are open — the http4s

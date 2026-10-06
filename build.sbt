@@ -119,6 +119,18 @@ lazy val buildTimeProtocolDependency =
   Compile / smithy4sInternalDependenciesAsJars ++=
     (protocol / Compile / fullClasspathAsJars).value.map(_.data)
 
+/** Puts the OpenAPI extension on the codegen model path, so that this build's own smithy4s codegen
+  * writes an OpenAPI spec for the fixtures' `TestService` — the spec `openapi`'s tests assert on.
+  *
+  * Only the extension's own jar, not its classpath: that would add alloy and smithy-openapi, which
+  * the code generator already provides. Referenced by id rather than through the `openapi` value:
+  * `openapi`'s tests depend on these fixtures, so the two values would otherwise each need the
+  * other to initialise.
+  */
+lazy val openapiOnModelPath =
+  Compile / smithy4sInternalDependenciesAsJars +=
+    (LocalProject("openapi") / Compile / packageBin).value
+
 /** Keeps the protocol namespace from being generated a second time.
   *
   * The trait has to be on the model path of every module that runs codegen (an annotated service
@@ -238,6 +250,37 @@ lazy val http4s = crossProject(JVMPlatform, NativePlatform)
     ),
   )
 
+/** OpenAPI for `ndjsonRestJson` services: a Smithy-to-OpenAPI extension, which alloy's conversion —
+  * the one smithy4s runs during codegen — discovers through `ServiceLoader` on the model path.
+  *
+  * Plain Java with no Scala suffix, like `protocol`, because it runs inside whatever generates the
+  * code: sbt 1 on Scala 2.12, sbt 2 on Scala 3, Mill, the smithy4s CLI — each on its own Scala
+  * build of alloy. It only calls alloy through Java signatures, so one artifact serves them all.
+  * Its tests hold that: it is compiled against alloy's Scala 3 build, while the specs they read are
+  * written by this build's codegen, which runs on Scala 2.12.
+  *
+  * alloy and smithy-openapi are `Provided`: anything that would load this already has both, and
+  * smithy4s keeps model-path jars its own classloader provides off the loader it adds them to, so
+  * shipping them would only be a second copy.
+  */
+lazy val openapi = project
+  .in(file("modules/openapi"))
+  .dependsOn(protocol, testFixtures.jvm % Test)
+  .settings(
+    name := "smithy4s-ndjson-openapi",
+    commonSettings,
+    tlMimaPreviousVersions := Set.empty,
+    crossPaths := false,
+    autoScalaLibrary := false,
+    libraryDependencies ++= Seq(
+      "com.disneystreaming.alloy" %% "alloy-openapi" % alloyVersion % Provided,
+      "software.amazon.smithy" % "smithy-openapi" % smithyVersion % Provided,
+      "org.typelevel" %% "weaver-cats" % weaverVersion % Test,
+    ),
+    // As for `protocol`: javadoc rejects the lint flags sbt-typelevel passes to javac.
+    Compile / doc / javacOptions := Seq("-source", tlJdkRelease.value.fold("11")(_.toString)),
+  )
+
 /** A service exercising every shape the protocol admits (binary in, NDJSON out, plain JSON,
   * metadata bindings), so the interpreter is tested against real codegen output rather than a
   * hand-written stand-in.
@@ -259,6 +302,7 @@ lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
     sharedSmithySources,
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
+    openapiOnModelPath,
   )
 
 /** `protocol` is aggregated by the root, exactly as it was before the Native cross-build.
@@ -276,7 +320,9 @@ lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
   *
   * The Native modules see the trait regardless: it reaches their codegen through
   * `buildTimeProtocolDependency`, a direct classpath reference that needs no aggregation.
+  *
+  * `openapi` is a plain Java project too, so it is attached the same way.
   */
 lazy val root = tlCrossRootProject
   .aggregate(core, http4s, testFixtures)
-  .configure(_.aggregate(protocol))
+  .configure(_.aggregate(protocol, openapi))
