@@ -28,18 +28,18 @@ ThisBuild / githubWorkflowBuild ~= {
   }
 }
 
-val smithy4sVersion = "0.19.11"
+val smithy4sVersion = "0.19.12"
 // Only the generated trait classes need this, and only against the stable parts of the model API
 // (`AbstractTrait`, `ShapeId`, `Node`). A consumer whose build also pulls an older smithy-model —
 // via alloy, say — resolves to the newer of the two, which is the direction Smithy tooling
 // supports: a newer model library reads older models.
-val smithyVersion = "1.73.0"
+val smithyVersion = "1.74.0"
 // Only needed to resolve the `alloy#*` shape IDs in the protocol's trait list at trait-codegen
 // time; it is not a dependency of anything published. Keep at or above the alloy that the smithy4s
 // version above builds against, so the trait list can't name a trait that smithy4s doesn't know.
 val alloyVersion = "0.3.40"
-val http4sVersion = "0.23.36"
-val fs2Version = "3.13.0"
+val http4sVersion = "0.23.37"
+val fs2Version = "3.14.0"
 val weaverVersion = "0.13.0"
 
 val commonSettings = Seq(
