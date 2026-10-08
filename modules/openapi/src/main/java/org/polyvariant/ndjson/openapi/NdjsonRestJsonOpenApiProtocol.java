@@ -27,6 +27,7 @@ import software.amazon.smithy.model.knowledge.HttpBinding;
 import software.amazon.smithy.model.knowledge.HttpBindingIndex;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.Shape;
+import software.amazon.smithy.model.traits.DocumentationTrait;
 import software.amazon.smithy.model.traits.MediaTypeTrait;
 import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.openapi.OpenApiConfig;
@@ -48,7 +49,8 @@ import software.amazon.smithy.openapi.model.ResponseObject;
  *   <li>a {@code @streaming union} as {@code application/x-ndjson}, its schema being that of a
  *       single line;
  *   <li>a {@code @streaming blob} as its {@code @mediaType}, or {@code application/octet-stream},
- *       with a binary schema in place of the base64 string alloy writes for a JSON blob.
+ *       with a binary schema in place of the base64 string alloy writes for a JSON blob, and the
+ *       blob's documentation as that schema's description.
  * </ul>
  *
  * <p>alloy is delegated to rather than extended. Its base class is Scala, built once per Scala
@@ -62,8 +64,6 @@ final class NdjsonRestJsonOpenApiProtocol implements OpenApiProtocol<NdjsonRestJ
   private static final String NDJSON = "application/x-ndjson";
 
   private static final String OCTET_STREAM = "application/octet-stream";
-
-  private static final Schema BINARY = Schema.builder().type("string").format("binary").build();
 
   /**
    * Raw, because alloy's protocol is typed for its own trait. That type is never acted on: alloy
@@ -150,9 +150,22 @@ final class NdjsonRestJsonOpenApiProtocol implements OpenApiProtocol<NdjsonRestJ
         .getTrait(MediaTypeTrait.class)
         .map(MediaTypeTrait::getValue)
         .orElse(OCTET_STREAM);
-      return new Streamed(mediaType, Optional.of(BINARY));
+      return new Streamed(mediaType, Optional.of(binary(target)));
     }
     return new Streamed(NDJSON, Optional.empty());
+  }
+
+  /**
+   * A binary string. It replaces the schema alloy describes the blob with, so the blob's
+   * documentation, which that schema carried as its description, is carried over.
+   */
+  private static Schema binary(Shape blob) {
+    Schema.Builder schema = Schema.builder().type("string").format("binary");
+    blob
+      .getTrait(DocumentationTrait.class)
+      .map(DocumentationTrait::getValue)
+      .ifPresent(schema::description);
+    return schema.build();
   }
 
   /** A streamed payload's media type, and the schema to describe it with if alloy's does not fit. */

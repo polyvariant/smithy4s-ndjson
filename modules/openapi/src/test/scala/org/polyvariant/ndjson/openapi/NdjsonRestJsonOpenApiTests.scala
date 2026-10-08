@@ -90,7 +90,14 @@ object NdjsonRestJsonOpenApiTests extends FunSuite {
   }
 
   test("a streamed blob with a @mediaType is described as that type") {
-    expect(clue(response("/report", "get", "200")) == Map("text/csv" -> binary))
+    expect(clue(response("/report", "get", "200").keySet) == Set("text/csv"))
+  }
+
+  test("a streamed blob keeps its documentation, as its schema's description") {
+    expect(
+      clue(response("/report", "get", "200").get("text/csv")) ==
+        Some(binary.withMember("description", "The report's rows, as CSV."))
+    )
   }
 
   test("a streamed response is found under the status from @http(code:)") {
