@@ -79,11 +79,11 @@ jobs:
 
       - name: Make target directories
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        run: mkdir -p modules/http4s/.jvm/target modules/core/.native/target modules/testfixtures/.native/target modules/core/.jvm/target modules/http4s/.native/target modules/testfixtures/.jvm/target modules/protocol/target project/target
+        run: mkdir -p modules/http4s/.jvm/target modules/core/.native/target modules/openapi/target modules/testfixtures/.native/target modules/core/.jvm/target modules/http4s/.native/target modules/testfixtures/.jvm/target modules/protocol/target project/target
 
       - name: Compress target directories
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        run: tar cf targets.tar modules/http4s/.jvm/target modules/core/.native/target modules/testfixtures/.native/target modules/core/.jvm/target modules/http4s/.native/target modules/testfixtures/.jvm/target modules/protocol/target project/target
+        run: tar cf targets.tar modules/http4s/.jvm/target modules/core/.native/target modules/openapi/target modules/testfixtures/.native/target modules/core/.jvm/target modules/http4s/.native/target modules/testfixtures/.jvm/target modules/protocol/target project/target
 
       - name: Upload target directories
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
