@@ -215,8 +215,8 @@ object NdjsonRestJsonBuilder {
     *
     * A line that fails to decode is raised as an `HttpContractError` — the error a malformed unary
     * body raises — so an operation that reads its input before it starts responding answers it with
-    * the same 400 (see `encodeErrors`). If the read occurs later, while the response is being streamed,
-    * it will fail the stream.
+    * the same 400 (see `encodeErrors`). If the read occurs later, while the response is being
+    * streamed, it will fail the stream.
     *
     * `SI` is `Nothing` when the operation streams nothing in, making the empty stream the only
     * inhabitant that could be passed.
