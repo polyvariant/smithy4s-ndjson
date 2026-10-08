@@ -113,6 +113,17 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
             )
           )
 
+      /** Raw bytes out, under the blob's own `@mediaType` rather than `application/octet-stream`.
+        */
+      def report() =
+        _ =>
+          IO.pure(
+            (
+              ReportOutput(),
+              Stream.emits("id,name\n1,a\n".getBytes("UTF-8")).map(Csv(_)),
+            )
+          )
+
       /** Raw in and raw out: echoes the request body back verbatim, upper-cased so the test can
         * tell the bytes made the whole round trip rather than being passed through untouched.
         */
@@ -340,6 +351,18 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
         // Raw framing, so no NDJSON newline is appended.
         expect(clue(body) == "contents of report.txt") &&
         expect(header(response, "X-Download-Name").contains("report.txt"))
+      }
+    }
+  }
+
+  test("a streamed blob output with a @mediaType is still written verbatim, under that type") {
+    run(Request[IO](Method.GET, Uri.unsafeFromString("/report"))).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.Ok) &&
+        expect(
+          clue(response.contentType.map(_.mediaType)).contains(org.http4s.MediaType.text.csv)
+        ) &&
+        expect(clue(body) == "id,name\n1,a\n")
       }
     }
   }
