@@ -26,7 +26,8 @@ import smithy4s.schema.Schema
   * the choice of framing — identically in both directions, so an operation streams the same way in
   * as it does out:
   *
-  *   - a `@streaming blob` is the body verbatim, `application/octet-stream`;
+  *   - a `@streaming blob` is the body verbatim, labelled with its `@mediaType` if it has one and
+  *     `application/octet-stream` otherwise;
   *   - a `@streaming union` is one JSON value per line, `application/x-ndjson`.
   *
   * Nothing else can reach here: a `@streaming` list or string is rejected by Smithy itself, before
@@ -36,8 +37,8 @@ private sealed trait StreamFraming[A] extends Product with Serializable {
 
   def mediaType: MediaType =
     this match {
-      case StreamFraming.Raw(_, _) => MediaType.application.`octet-stream`
-      case StreamFraming.Ndjson()  => Ndjson.mediaType
+      case StreamFraming.Raw(_, _, contentType) => contentType
+      case StreamFraming.Ndjson()               => Ndjson.mediaType
     }
 
 }
@@ -47,9 +48,11 @@ private object StreamFraming {
   /** A `@streaming blob`: raw bytes, with the newtype codegen gave its element type.
     *
     * Both directions are needed — `wrap` to hand a request body to the impl, `unwrap` to write an
-    * impl's stream back out as a response body.
+    * impl's stream back out as a response body. `contentType` only labels those bytes, it never
+    * changes how they are framed.
     */
-  final case class Raw[A](wrap: Byte => A, unwrap: A => Byte) extends StreamFraming[A]
+  final case class Raw[A](wrap: Byte => A, unwrap: A => Byte, contentType: MediaType)
+    extends StreamFraming[A]
 
   /** A `@streaming union`: newline-delimited JSON, encoded by the ordinary payload codecs. */
   final case class Ndjson[A]() extends StreamFraming[A]
@@ -66,8 +69,20 @@ private object StreamFraming {
   def fromSchema[A](schema: Schema[A]): StreamFraming[A] =
     schema match {
       case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
-        Raw(bijection.apply, bijection.from)
+        Raw(bijection.apply, bijection.from, mediaTypeOf(schema))
       case _ => Ndjson()
     }
+
+  /** The blob's own `@mediaType`, which is how Smithy describes what a blob contains.
+    *
+    * Smithy's `MediaTypeValidator` rejects a malformed value before codegen ever runs, so the
+    * fallback only covers a value http4s happens to parse more strictly than Smithy does.
+    */
+  private def mediaTypeOf[A](schema: Schema[A]): MediaType =
+    schema
+      .hints
+      .get(smithy.api.MediaType)
+      .flatMap(mediaType => MediaType.parse(mediaType.value).toOption)
+      .getOrElse(MediaType.application.`octet-stream`)
 
 }
