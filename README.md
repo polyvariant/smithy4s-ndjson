@@ -113,7 +113,7 @@ Each NDJSON line is byte-for-byte what `simpleRestJson` would have written as a 
 newline-*terminated* rather than separated — so a reader that hits EOF mid-line knows it was
 truncated. Reading a stream back skips blank lines, so that trailing terminator doesn't come back as
 an extra element on the next hop; a line that is present but malformed fails the request rather than
-silently shortening the stream.
+silently shortening the stream — with a 400 if the operation reads it before responding.
 
 ### What the model must satisfy
 
@@ -161,7 +161,8 @@ stream is drained.
 
 **A late failure can't be an HTTP status.** The status is committed when the stream begins, so a
 mid-stream failure has to travel as a member of the output union (`failed`, by convention). Errors
-raised *before* streaming starts are still encoded normally, with the status from their `@httpError`.
+raised *before* streaming starts are still encoded normally: a declared error with the status from
+its `@httpError`, and a request that fails to decode with a 400, exactly as under `simpleRestJson`.
 
 **Request-scoped state is gone by the time the stream runs.** The body is drained after the handler
 returns, so an `IOLocal` set by middleware — the caller's identity, a tracing span — has already
