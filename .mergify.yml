@@ -32,6 +32,14 @@ pull_request_rules:
       add:
       - http4s
       remove: []
+- name: Label openapi PRs
+  conditions:
+  - files~=^modules/openapi/
+  actions:
+    label:
+      add:
+      - openapi
+      remove: []
 - name: Label protocol PRs
   conditions:
   - files~=^modules/protocol/

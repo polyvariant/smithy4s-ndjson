@@ -22,6 +22,7 @@ service TestService {
         Fallible
         Ingest
         Download
+        Report
         Relay
         Formats
     ]
@@ -189,6 +190,18 @@ operation Download {
     }
 }
 
+/// Binary out, labelled: a `@streaming blob` with a `@mediaType` is still written verbatim, but
+/// under that media type rather than `application/octet-stream`.
+@readonly
+@http(method: "GET", uri: "/report", code: 200)
+operation Report {
+    output := {
+        @httpPayload
+        @required
+        content: Csv
+    }
+}
+
 /// Binary in, binary out: both edges raw, so the framing rule is exercised
 /// symmetrically within one operation.
 @http(method: "POST", uri: "/relay", code: 200)
@@ -224,6 +237,11 @@ structure Remove {
 
 @streaming
 blob Payload
+
+/// The report's rows, as CSV.
+@streaming
+@mediaType("text/csv")
+blob Csv
 
 @streaming
 union Event {

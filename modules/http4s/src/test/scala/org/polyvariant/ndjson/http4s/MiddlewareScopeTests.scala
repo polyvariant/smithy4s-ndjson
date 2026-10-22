@@ -73,6 +73,7 @@ object MiddlewareScopeTests extends SimpleIOSuite {
         def upload() = _ => IO.pure((UploadOutput(), Stream.empty))
         def ingest() = _ => IO.pure((IngestOutput(0), Stream.empty))
         def download(name: String) = _ => IO.pure((DownloadOutput(), Stream.empty))
+        def report() = _ => IO.pure((ReportOutput(), Stream.empty))
         def relay() = _ => IO.pure((RelayOutput(), Stream.empty))
         def formats(stamp: smithy4s.time.Timestamp, renamed: String) =
           _ => IO.pure((FormatsOutput(), Stream.empty))

@@ -221,8 +221,8 @@ object NdjsonRestJsonBuilder {
       .streamedInput
       .fold(Stream.empty.covaryAll[F, SI]) { streamed =>
         StreamFraming.fromSchema(streamed.schema) match {
-          case StreamFraming.Raw(wrap, _) => request.body.map(wrap)
-          case StreamFraming.Ndjson()     =>
+          case StreamFraming.Raw(wrap, _, _) => request.body.map(wrap)
+          case StreamFraming.Ndjson()        =>
             Ndjson.decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
         }
       }
@@ -267,10 +267,10 @@ object NdjsonRestJsonBuilder {
     * The non-streaming case is smithy4s's own encoder, so `@httpResponseCode` and `@httpHeader`
     * bindings on the output are honoured. The streaming case cannot use it — that encoder wants a
     * whole body up front — so the envelope's metadata is encoded separately and the body is framed
-    * per the streamed member's shape: raw bytes for a `@streaming blob`, NDJSON for a `@streaming`
-    * union. The status is fixed by `@http(code:)` and committed before the first element is pulled,
-    * which is what lets a client render progress, and why a later failure has to travel as an
-    * element rather than a status.
+    * per the streamed member's shape: raw bytes for a `@streaming blob` (labelled with its
+    * `@mediaType` if it has one), NDJSON for a `@streaming` union. The status is fixed by
+    * `@http(code:)` and committed before the first element is pulled, which is what lets a client
+    * render progress, and why a later failure has to travel as an element rather than a status.
     */
   private def encodeOutput[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
@@ -287,8 +287,8 @@ object NdjsonRestJsonBuilder {
 
           val encodeBody: Stream[F, SO] => Stream[F, Byte] =
             framing match {
-              case StreamFraming.Raw(_, unwrap) => _.map(unwrap)
-              case StreamFraming.Ndjson()       =>
+              case StreamFraming.Raw(_, unwrap, _) => _.map(unwrap)
+              case StreamFraming.Ndjson()          =>
                 val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
                 Ndjson.encode(_, elementEncoder)
             }
@@ -305,9 +305,9 @@ object NdjsonRestJsonBuilder {
       }
 
   /** The response headers for a streamed output: whatever the envelope's `@httpHeader` members
-    * bind, plus the content type the framing implies.
+    * bind, plus the content type the framing implies — for a `@streaming blob`, its `@mediaType`.
     *
-    * The content type is `put` last so it wins: the framing is the protocol's to decide, not the
+    * The content type is `put` last so it wins: it is the streamed shape's to decide, not the
     * envelope's.
     */
   private def streamedHeaders(metadata: Metadata, mediaType: MediaType): Headers =
