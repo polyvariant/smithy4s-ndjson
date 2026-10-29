@@ -5,9 +5,11 @@ namespace org.polyvariant.ndjson.test
 use alloy#dateFormat
 use alloy#uuidFormat
 use org.polyvariant.ndjson#ndjsonRestJson
+use org.polyvariant.ndjson#serverSentEvents
 
 /// Exercises every shape the protocol admits, in one service: binary in, NDJSON
-/// out, plain JSON in and out, and metadata bindings alongside a streamed body.
+/// out, server-sent events in and out, plain JSON in and out, and metadata
+/// bindings alongside a streamed body.
 ///
 /// Lives in its own module rather than `ndjson`'s test scope because the
 /// smithy4s sbt plugin only wires codegen into `Compile`; keeping it out of
@@ -24,6 +26,8 @@ service TestService {
         Download
         Relay
         Formats
+        Watch
+        Collect
     ]
 }
 
@@ -306,3 +310,41 @@ string Uuid
 
 @dateFormat
 string Day
+
+/// Plain JSON in, server-sent events out: one event per value, then `[DONE]`.
+@http(method: "POST", uri: "/watch", code: 200)
+operation Watch {
+    input := {
+        @required
+        count: Integer
+    }
+
+    output := {
+        @httpPayload
+        @required
+        notifications: Notification
+    }
+}
+
+/// Server-sent events in: a `@serverSentEvents` union on the *input* side, one value per event.
+@http(method: "POST", uri: "/collect", code: 200)
+operation Collect {
+    input := {
+        @httpPayload
+        @required
+        notifications: Notification
+    }
+
+    output := {
+        @required
+        received: Integer
+    }
+}
+
+/// The same members as `Event`, framed as server-sent events rather than NDJSON.
+@streaming
+@serverSentEvents(terminator: "[DONE]")
+union Notification {
+    progress: Progress
+    completed: Completed
+}

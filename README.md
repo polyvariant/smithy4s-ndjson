@@ -83,13 +83,15 @@ lists against each other, so alloy adding a trait fails the build rather than dr
 On top of that, a `@streaming` payload is framed by its *shape*, and the same rule applies to both
 edges — so an operation reads a body exactly the way a peer writes one:
 
-|                    | input             | output                                      |
-| ------------------ | ----------------- | ------------------------------------------- |
-| `@streaming blob`  | raw bytes in      | raw bytes out (`application/octet-stream`)  |
-| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`) |
+|                                        | input                         | output                                               |
+| -------------------------------------- | ----------------------------- | ---------------------------------------------------- |
+| `@streaming blob`                      | raw bytes in                  | raw bytes out (`application/octet-stream`)           |
+| `@streaming union`                     | NDJSON decoded in             | NDJSON encoded out (`application/x-ndjson`)          |
+| `@streaming union` `@serverSentEvents` | server-sent events decoded in | server-sent events encoded out (`text/event-stream`) |
 
-Smithy restricts `@streaming` to `:is(blob, union)`, so those two rows are the whole of it. The
-example above uses one of each; an operation is free to use the same framing on both sides:
+Smithy restricts `@streaming` to `:is(blob, union)`, so a union is framed as NDJSON unless it opts
+into [server-sent events](#server-sent-events). The example above uses one of each; an operation is
+free to use the same framing on both sides:
 
 ```smithy
 /// Raw bytes in, raw bytes out.
@@ -114,6 +116,32 @@ newline-*terminated* rather than separated — so a reader that hits EOF mid-lin
 truncated. Reading a stream back skips blank lines, so that trailing terminator doesn't come back as
 an extra element on the next hop; a line that is present but malformed fails the request rather than
 silently shortening the stream.
+
+### Server-sent events
+
+A client that only reads [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+— a browser's `EventSource`, or a chat UI built on one — is served by marking the union
+`@serverSentEvents`:
+
+```smithy
+use org.polyvariant.ndjson#serverSentEvents
+
+@streaming
+@serverSentEvents(terminator: "[DONE]")
+union ChatEvent {
+    delta: TextDelta
+    finished: Finished
+}
+```
+
+Each value is the `data` of one event, encoded exactly as it would be on an NDJSON line, and the
+body is `text/event-stream`. The optional `terminator` is the `data` of one more event written after
+the last value, for clients that expect the stream to be closed that way. It is only written once
+the stream completes, so a stream cut short by a failure ends without it, and the client can tell
+it is incomplete. Read back, `data` fields are joined by newlines until a blank line ends the event;
+comments and the other fields (`event`, `id`, `retry`) are skipped, an event cut off before its
+blank line is not delivered, an event with the terminator as its `data` is dropped, and data that
+doesn't decode fails the request, as a malformed NDJSON line does.
 
 ### What the model must satisfy
 

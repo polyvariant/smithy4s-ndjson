@@ -28,6 +28,8 @@ import org.polyvariant.ndjson.test.*
 import org.typelevel.ci.CIString
 import weaver.SimpleIOSuite
 
+import java.nio.charset.StandardCharsets.UTF_8
+
 object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
 
   /** A [[TestService]] impl whose behaviour is fixed per operation, so each test asserts on the
@@ -159,6 +161,29 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
                 .append(Stream.emit(Event.FailedCase(Failed(tag)))),
             )
           )
+
+      /** Writes its values as server-sent events, so the framing can be told apart from NDJSON. */
+      def watch(count: Int) =
+        _ =>
+          IO.pure(
+            (
+              WatchOutput(),
+              Stream
+                .range(0L, count.toLong)
+                .map(i => Notification.ProgressCase(Progress(i)))
+                .append(Stream.emit(Notification.CompletedCase(Completed(count.toLong)))),
+            )
+          )
+
+      /** Counts the events it was handed, so a test can tell the request body was decoded event by
+        * event, with everything that is not a value skipped.
+        */
+      def collect() =
+        notifications =>
+          notifications
+            .compile
+            .toList
+            .map(ns => (CollectOutput(received = ns.size), Stream.empty))
 
     }
 
@@ -323,6 +348,86 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       Request[IO](Method.POST, Uri.unsafeFromString("/ingest"))
         .withEntity("""{"add":{"key":"a"}}
                       |not json
+                      |""".stripMargin)
+    ).attempt.map(result => expect(result.isLeft))
+  }
+
+  test("a @serverSentEvents output is framed as one event per value, then its terminator") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/watch"))
+        .withEntity("""{"count":2}""")
+    ).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.Ok) &&
+        expect(response.contentType.map(_.mediaType).contains(Sse.mediaType)) &&
+        expect(
+          clue(body) ==
+            """data: {"progress":{"soFar":0}}
+              |
+              |data: {"progress":{"soFar":1}}
+              |
+              |data: {"completed":{"total":2}}
+              |
+              |data: [DONE]
+              |
+              |""".stripMargin
+        )
+      }
+    }
+  }
+
+  pureTest("an event's data is written as one field per line, whatever its line breaks") {
+    expect(
+      clue(new String(Sse.encodeEvent("a\r\nb\rc\nd").toArray, UTF_8)) ==
+        "data: a\ndata: b\ndata: c\ndata: d\n\n"
+    )
+  }
+
+  test("a @serverSentEvents input is decoded one event at a time, skipping what is not data") {
+    // The format lets lines end in a CRLF or a lone CR as well as an LF; the last events use those
+    val events =
+      """: a comment, which is no event
+        |event: progress
+        |id: 1
+        |data: {"progress":
+        |data: {"soFar":0}}
+        |
+        |: a keep-alive, which is an event without data
+        |
+        |data:{"completed":{"total":1}}
+        |
+        |""".stripMargin +
+        "data: {\"progress\":{\"soFar\":1}}\r\n\r\n" +
+        "data: {\"progress\":{\"soFar\":2}}\r\r" +
+        "data: [DONE]\n\n"
+
+    run(Request[IO](Method.POST, Uri.unsafeFromString("/collect")).withEntity(events)).flatMap {
+      response =>
+        bodyText(response).map { body =>
+          expect(response.status == Status.Ok) &&
+          expect(clue(body) == """{"received":4}""")
+        }
+    }
+  }
+
+  test("an event cut off before its blank line is not decoded") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/collect"))
+        .withEntity("""data: {"completed":{"total":1}}
+                      |
+                      |data: {"progress":{"soFar":0}}""".stripMargin)
+    ).flatMap { response =>
+      bodyText(response).map(body => expect(clue(body) == """{"received":1}"""))
+    }
+  }
+
+  test("an event with malformed data fails the request rather than truncating the stream") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/collect"))
+        .withEntity("""data: {"completed":{"total":1}}
+                      |
+                      |data: not json
+                      |
                       |""".stripMargin)
     ).attempt.map(result => expect(result.isLeft))
   }
