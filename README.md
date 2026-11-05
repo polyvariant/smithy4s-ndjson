@@ -83,10 +83,13 @@ lists against each other, so alloy adding a trait fails the build rather than dr
 On top of that, a `@streaming` payload is framed by its *shape*, and the same rule applies to both
 edges — so an operation reads a body exactly the way a peer writes one:
 
-|                    | input             | output                                      |
-| ------------------ | ----------------- | ------------------------------------------- |
-| `@streaming blob`  | raw bytes in      | raw bytes out (`application/octet-stream`)  |
-| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`) |
+|                    | input             | output                                                            |
+| ------------------ | ----------------- | ----------------------------------------------------------------- |
+| `@streaming blob`  | raw bytes in      | raw bytes out (its `@mediaType`, else `application/octet-stream`) |
+| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`)                       |
+
+A blob's `@mediaType` only labels the bytes — a `@streaming` blob with `@mediaType("text/csv")` goes
+out as `text/csv` — it never changes how they are framed.
 
 Smithy restricts `@streaming` to `:is(blob, union)`, so those two rows are the whole of it. The
 example above uses one of each; an operation is free to use the same framing on both sides:
@@ -188,6 +191,29 @@ It wraps the handler of an endpoint that has *already matched*, never the routin
 so a request for an unknown path falls through untouched and these routes compose with others.
 Note the scope caveat above: middleware built on request-scoped state sees that state while the
 operation starts, but not while the response stream is drained.
+
+## OpenAPI
+
+smithy4s generates an OpenAPI spec for each service at build time — through alloy, which only knows
+`alloy#simpleRestJson`. `smithy4s-ndjson-openapi` teaches that conversion this protocol: put it on
+the codegen model path, and every `@ndjsonRestJson` service gets a spec too, which
+`smithy4s-http4s-swagger` serves like any other.
+
+```scala
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-openapi" % "<version>" % Smithy4s
+```
+
+Everything that doesn't stream is described exactly as alloy describes `simpleRestJson`. A
+`@streaming` payload is described by its framing:
+
+|                    | media type                                        | schema                      |
+| ------------------ | ------------------------------------------------- | --------------------------- |
+| `@streaming blob`  | its `@mediaType`, else `application/octet-stream` | a binary string             |
+| `@streaming union` | `application/x-ndjson`                            | the union: one line's worth |
+
+Like the protocol, it's a plain Java artifact with no Scala suffix — note the single `%`. It runs
+inside the code generator, on whichever Scala version that uses (sbt 1 and sbt 2 already differ),
+so it calls alloy only through Java signatures, which every Scala build of alloy shares.
 
 ## Platform support
 
