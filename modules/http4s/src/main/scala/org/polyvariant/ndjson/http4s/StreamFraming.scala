@@ -17,6 +17,7 @@
 package org.polyvariant.ndjson.http4s
 
 import org.http4s.MediaType
+import org.polyvariant.ndjson.ServerSentEvents
 import smithy4s.schema.Primitive
 import smithy4s.schema.Schema
 
@@ -27,7 +28,8 @@ import smithy4s.schema.Schema
   * as it does out:
   *
   *   - a `@streaming blob` is the body verbatim, `application/octet-stream`;
-  *   - a `@streaming union` is one JSON value per line, `application/x-ndjson`.
+  *   - a `@streaming union` is one JSON value per line, `application/x-ndjson`;
+  *   - a `@streaming union` marked `@serverSentEvents` is one event per value, `text/event-stream`.
   *
   * Nothing else can reach here: a `@streaming` list or string is rejected by Smithy itself, before
   * codegen runs.
@@ -38,6 +40,7 @@ private sealed trait StreamFraming[A] extends Product with Serializable {
     this match {
       case StreamFraming.Raw(_, _) => MediaType.application.`octet-stream`
       case StreamFraming.Ndjson()  => Ndjson.mediaType
+      case StreamFraming.Sse(_)    => Sse.mediaType
     }
 
 }
@@ -54,11 +57,17 @@ private object StreamFraming {
   /** A `@streaming union`: newline-delimited JSON, encoded by the ordinary payload codecs. */
   final case class Ndjson[A]() extends StreamFraming[A]
 
+  /** A `@streaming union` marked `@serverSentEvents`: one server-sent event per value, encoded by
+    * the ordinary payload codecs, then an event with the `terminator` as its data, if any.
+    */
+  final case class Sse[A](terminator: Option[String]) extends StreamFraming[A]
+
   /** Reads the framing off a streamed member's element schema.
     *
     * A `@streaming blob` codegens to a `Newtype[Byte]` (`bijection(byte, ...)`), so a bijection
     * over a byte primitive is how a blob presents itself here; anything else is a union, which is
-    * the only other shape `@streaming` admits.
+    * the only other shape `@streaming` admits, framed as server-sent events when the union carries
+    * `@serverSentEvents`.
     *
     * Matching the primitive's own tag is what makes this typecheck without a cast: `Primitive` is a
     * GADT, so matching `PByte` refines the bijection's source type to `Byte` within the branch.
@@ -67,7 +76,11 @@ private object StreamFraming {
     schema match {
       case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, Primitive.PByte), bijection) =>
         Raw(bijection.apply, bijection.from)
-      case _ => Ndjson()
+      case _ =>
+        schema
+          .hints
+          .get(ServerSentEvents)
+          .fold[StreamFraming[A]](Ndjson())(sse => Sse(sse.terminator))
     }
 
 }
