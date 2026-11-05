@@ -83,10 +83,13 @@ lists against each other, so alloy adding a trait fails the build rather than dr
 On top of that, a `@streaming` payload is framed by its *shape*, and the same rule applies to both
 edges — so an operation reads a body exactly the way a peer writes one:
 
-|                    | input             | output                                      |
-| ------------------ | ----------------- | ------------------------------------------- |
-| `@streaming blob`  | raw bytes in      | raw bytes out (`application/octet-stream`)  |
-| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`) |
+|                    | input             | output                                                            |
+| ------------------ | ----------------- | ----------------------------------------------------------------- |
+| `@streaming blob`  | raw bytes in      | raw bytes out (its `@mediaType`, else `application/octet-stream`) |
+| `@streaming union` | NDJSON decoded in | NDJSON encoded out (`application/x-ndjson`)                       |
+
+A blob's `@mediaType` only labels the bytes — a `@streaming` blob with `@mediaType("text/csv")` goes
+out as `text/csv` — it never changes how they are framed.
 
 Smithy restricts `@streaming` to `:is(blob, union)`, so those two rows are the whole of it. The
 example above uses one of each; an operation is free to use the same framing on both sides:

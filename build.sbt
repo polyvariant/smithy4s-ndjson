@@ -1,3 +1,6 @@
+import com.typesafe.tools.mima.core.Problem
+import com.typesafe.tools.mima.core.ProblemFilters
+
 ThisBuild / tlBaseVersion := "0.3"
 ThisBuild / organization := "org.polyvariant"
 ThisBuild / organizationName := "Polyvariant"
@@ -227,6 +230,12 @@ lazy val http4s = crossProject(JVMPlatform, NativePlatform)
     sharedSmithySources,
     buildTimeProtocolDependency,
     protocolGeneratedByCore,
+    // `StreamFraming` is private to `org.polyvariant.ndjson.http4s`, so nothing outside the library
+    // can reach it. Scala 3 still compiles it to a public class, which MiMa would otherwise hold to
+    // binary compatibility.
+    mimaBinaryIssueFilters += ProblemFilters.exclude[Problem](
+      "org.polyvariant.ndjson.http4s.StreamFraming*"
+    ),
   )
 
 /** A service exercising every shape the protocol admits (binary in, NDJSON out, plain JSON,

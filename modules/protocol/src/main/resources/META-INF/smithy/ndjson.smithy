@@ -15,7 +15,8 @@ namespace org.polyvariant.ndjson
 /// `@streaming` payload is framed by its shape — the same rule in both
 /// directions, so an operation reads a body exactly the way a peer writes one:
 ///
-/// - a `@streaming blob` is the body verbatim, as `application/octet-stream`;
+/// - a `@streaming blob` is the body verbatim, as its `@mediaType` if it has
+///   one and `application/octet-stream` otherwise;
 /// - a `@streaming union` is one JSON value per line, as
 ///   `application/x-ndjson`.
 ///
