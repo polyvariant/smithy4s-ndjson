@@ -40,7 +40,7 @@ val smithyVersion = "1.74.1"
 val alloyVersion = "0.3.40"
 val http4sVersion = "0.23.38"
 val fs2Version = "3.14.0"
-val weaverVersion = "0.13.0"
+val weaverVersion = "0.13.1"
 
 val commonSettings = Seq(
   scalacOptions ++= Seq(
