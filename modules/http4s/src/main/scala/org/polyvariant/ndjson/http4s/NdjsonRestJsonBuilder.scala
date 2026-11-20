@@ -207,8 +207,9 @@ object NdjsonRestJsonBuilder {
     *
     * The framing follows the streamed member's shape: a `@streaming blob` is the body verbatim,
     * wrapped element-wise into the newtype codegen gave it, while a `@streaming union` is read as
-    * newline-delimited JSON and decoded one value per line. Both directions agree on this rule, so
-    * an operation reads its input exactly the way a peer would write it as output.
+    * newline-delimited JSON and decoded one value per line, or one value per event when it is
+    * marked `@serverSentEvents`. Both directions agree on this rule, so an operation reads its
+    * input exactly the way a peer would write it as output.
     *
     * `SI` is `Nothing` when the operation streams nothing in, making the empty stream the only
     * inhabitant that could be passed.
@@ -224,6 +225,12 @@ object NdjsonRestJsonBuilder {
           case StreamFraming.Raw(wrap, _) => request.body.map(wrap)
           case StreamFraming.Ndjson()     =>
             Ndjson.decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
+          case StreamFraming.Sse(terminator) =>
+            Sse.decode(
+              request.body,
+              NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema),
+              terminator,
+            )
         }
       }
 
@@ -268,9 +275,9 @@ object NdjsonRestJsonBuilder {
     * bindings on the output are honoured. The streaming case cannot use it — that encoder wants a
     * whole body up front — so the envelope's metadata is encoded separately and the body is framed
     * per the streamed member's shape: raw bytes for a `@streaming blob`, NDJSON for a `@streaming`
-    * union. The status is fixed by `@http(code:)` and committed before the first element is pulled,
-    * which is what lets a client render progress, and why a later failure has to travel as an
-    * element rather than a status.
+    * union, or server-sent events for one marked `@serverSentEvents`. The status is fixed by
+    * `@http(code:)` and committed before the first element is pulled, which is what lets a client
+    * render progress, and why a later failure has to travel as an element rather than a status.
     */
   private def encodeOutput[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
@@ -291,6 +298,9 @@ object NdjsonRestJsonBuilder {
               case StreamFraming.Ndjson()       =>
                 val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
                 Ndjson.encode(_, elementEncoder)
+              case StreamFraming.Sse(terminator) =>
+                val elementEncoder = NdjsonRestJsonCodecs.encoders.fromSchema(streamed.schema)
+                Sse.encode(_, elementEncoder, terminator)
             }
 
           (output, stream) => {

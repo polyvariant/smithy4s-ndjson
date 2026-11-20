@@ -17,10 +17,12 @@ namespace org.polyvariant.ndjson
 ///
 /// - a `@streaming blob` is the body verbatim, as `application/octet-stream`;
 /// - a `@streaming union` is one JSON value per line, as
-///   `application/x-ndjson`.
+///   `application/x-ndjson`;
+/// - a `@streaming union` marked `@serverSentEvents` is one server-sent event
+///   per value, as `text/event-stream`.
 ///
-/// Smithy restricts `@streaming` to `:is(blob, union)`, so those two cases are
-/// the whole of it.
+/// Smithy restricts `@streaming` to `:is(blob, union)`, so those cases are the
+/// whole of it.
 ///
 /// A streamed response commits its status before the first element is pulled,
 /// so a mid-stream failure cannot be reported as an HTTP status — it has to be
@@ -88,3 +90,22 @@ namespace org.polyvariant.ndjson
 )
 @trait(selector: "service")
 structure ndjsonRestJson {}
+
+/// Frames a `@streaming union` as server-sent events (`text/event-stream`)
+/// instead of NDJSON, for clients that only read that format.
+///
+/// Each value is the `data` of one event, encoded exactly as it would be on an
+/// NDJSON line. Read back, `data` fields are joined by newlines until a blank
+/// line ends the event; comments and the other fields (`event`, `id`, `retry`)
+/// are skipped, and an event cut off before its blank line is not delivered.
+///
+/// Not part of `@protocolDefinition`'s trait list: that list decides which
+/// traits the JSON codecs honour, and this one only decides the framing.
+@trait(selector: "union [trait|streaming]")
+structure serverSentEvents {
+    /// The `data` of one more event, written after the last value, for clients
+    /// that expect the stream to be closed that way, e.g. `[DONE]`. It is only
+    /// written once the stream completes, so a stream cut short by a failure
+    /// ends without it. Read back, an event with this `data` is skipped.
+    terminator: String
+}
