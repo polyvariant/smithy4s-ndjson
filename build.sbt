@@ -37,7 +37,7 @@ val smithyVersion = "1.74.1"
 // Only needed to resolve the `alloy#*` shape IDs in the protocol's trait list at trait-codegen
 // time; it is not a dependency of anything published. Keep at or above the alloy that the smithy4s
 // version above builds against, so the trait list can't name a trait that smithy4s doesn't know.
-val alloyVersion = "0.3.40"
+val alloyVersion = "0.3.41"
 val http4sVersion = "0.23.38"
 val fs2Version = "3.14.0"
 val weaverVersion = "0.13.1"
