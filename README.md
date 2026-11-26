@@ -245,6 +245,37 @@ Like the protocol, it's a plain Java artifact with no Scala suffix — note the 
 inside the code generator, on whichever Scala version that uses (sbt 1 and sbt 2 already differ),
 so it calls alloy only through Java signatures, which every Scala build of alloy shares.
 
+## Compliance tests
+
+`smithy4s-ndjson-protocol-tests` describes the protocol's wire format as Smithy
+[protocol compliance tests](https://smithy.io/2.0/additional-specs/http-protocol-compliance-tests.html),
+so an implementation in any language can check itself against it — the way `alloy-protocol-tests`
+does for `simpleRestJson`:
+
+```scala
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol-tests" % "<version>"
+```
+
+It is a model of one `@ndjsonRestJson` service whose operations carry the cases, and nothing else:
+
+- `@httpRequestTests` / `@httpResponseTests` for operations that don't stream (a spot check of the
+  `simpleRestJson` promise: every metadata binding, a structure payload, a declared error), and for
+  `@streaming blob`s, whose body is the bytes verbatim;
+- `@eventStreamTests` for `@streaming union`s, NDJSON and server-sent events alike: the framing in
+  both directions, what a reader must forgive (blank lines, `\r\n`, comments, other event fields, the
+  terminator) and what it must reject, constraint traits on streamed values, and one case per trait
+  in the protocol's `@protocolDefinition` list that changes how a streamed value is encoded.
+
+`@eventStreamTests` was written for AWS's binary event streams; how its fields map onto these
+framings is documented at the top of the model (`service.smithy`). Every case states its whole HTTP
+request and response, so a harness never has to derive either.
+
+This repository runs the server side of every case against `NdjsonRestJsonBuilder`, in
+`modules/compliance-tests`, partly through smithy4s's own compliance harness. smithy4s can't generate
+code for a model carrying `@eventStreamTests` — it can't render an event's `Blob`s as a hint — so
+codegen strips them with [smithy-transformations](https://github.com/polyvariant/smithy-transformations)'
+`removeTraits`, and the tests read those cases from the model instead.
+
 ## Platform support
 
 JVM only for now. Nothing in the interpreter is JVM-specific, so JS and Native are open — the http4s

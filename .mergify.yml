@@ -16,6 +16,14 @@ pull_request_rules:
   - status-success=Test (ubuntu-22.04, 3, temurin@11, rootNative)
   actions:
     merge: {}
+- name: Label compliance-tests PRs
+  conditions:
+  - files~=^modules/compliance-tests/
+  actions:
+    label:
+      add:
+      - compliance-tests
+      remove: []
 - name: Label core PRs
   conditions:
   - files~=^modules/core/
@@ -47,6 +55,14 @@ pull_request_rules:
     label:
       add:
       - protocol
+      remove: []
+- name: Label protocol-tests PRs
+  conditions:
+  - files~=^modules/protocol-tests/
+  actions:
+    label:
+      add:
+      - protocol-tests
       remove: []
 - name: Label testfixtures PRs
   conditions:
