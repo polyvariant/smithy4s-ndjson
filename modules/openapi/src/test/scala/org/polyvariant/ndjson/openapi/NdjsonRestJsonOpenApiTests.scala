@@ -79,6 +79,16 @@ object NdjsonRestJsonOpenApiTests extends FunSuite {
     expect(clue(request("/ingest", "post")) == Map("application/x-ndjson" -> ref("Command")))
   }
 
+  test("a @serverSentEvents union output is text/event-stream, described one event at a time") {
+    expect(
+      clue(response("/watch", "post", "200")) == Map("text/event-stream" -> ref("Notification"))
+    )
+  }
+
+  test("a @serverSentEvents union input is text/event-stream, described one event at a time") {
+    expect(clue(request("/collect", "post")) == Map("text/event-stream" -> ref("Notification")))
+  }
+
   test("a streamed blob output is application/octet-stream, as binary rather than base64") {
     expect(
       clue(response("/download/{name}", "get", "200")) == Map("application/octet-stream" -> binary)
