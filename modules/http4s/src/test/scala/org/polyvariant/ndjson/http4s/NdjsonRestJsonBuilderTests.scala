@@ -441,6 +441,15 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     }
   }
 
+  test("an event cut off after a whole line, before its blank line, is not decoded") {
+    run(
+      Request[IO](Method.POST, Uri.unsafeFromString("/collect"))
+        .withEntity("data: {\"completed\":{\"total\":1}}\n\ndata: {\"progress\":{\"soFar\":0}}\n")
+    ).flatMap { response =>
+      bodyText(response).map(body => expect(clue(body) == """{"received":1}"""))
+    }
+  }
+
   test("an event with malformed data is a 400 rather than a truncated stream") {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/collect"))

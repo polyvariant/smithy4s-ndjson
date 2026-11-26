@@ -81,6 +81,10 @@ object Sse {
     bytes
       .through(fs2.text.utf8.decode)
       .through(fs2.text.lines)
+      // `lines` ends with whatever follows the last line break: a line cut off mid-way, or nothing at
+      // all. Neither is a line, and the second would otherwise read as the blank line that dispatches
+      // an event — delivering one whose blank line never arrived.
+      .dropLast
       .mapAccumulate(Vector.empty[String]) { (data, line) =>
         if (line.isEmpty)
           (Vector.empty, Some(data))
