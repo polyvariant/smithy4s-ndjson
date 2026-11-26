@@ -214,10 +214,10 @@ object NdjsonRestJsonBuilder {
     * marked `@serverSentEvents`. Both directions agree on this rule, so an operation reads its
     * input exactly the way a peer would write it as output.
     *
-    * A line that fails to decode is raised as an `HttpContractError` — the error a malformed unary
-    * body raises — so an operation that reads its input before it starts responding answers it with
-    * the same 400 (see `encodeErrors`). If the read occurs later, while the response is being
-    * streamed, it will fail the stream.
+    * A line or event that fails to decode is raised as an `HttpContractError` — the error a
+    * malformed unary body raises — so an operation that reads its input before it starts responding
+    * answers it with the same 400 (see `encodeErrors`). If the read occurs later, while the
+    * response is being streamed, it will fail the stream.
     *
     * `SI` is `Nothing` when the operation streams nothing in, making the empty stream the only
     * inhabitant that could be passed.
@@ -229,22 +229,23 @@ object NdjsonRestJsonBuilder {
     endpoint
       .streamedInput
       .fold(Stream.empty.covaryAll[F, SI]) { streamed =>
-        StreamFraming.fromSchema(streamed.schema) match {
-          case StreamFraming.Raw(wrap, _, _) => request.body.map(wrap)
-          case StreamFraming.Ndjson()        =>
-            Ndjson
-              .decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
-              .handleErrorWith {
-                case error: PayloadError =>
-                  Stream.raiseError[F](HttpContractError.fromPayloadError(error))
-                case error => Stream.raiseError[F](error)
-              }
-          case StreamFraming.Sse(terminator) =>
-            Sse.decode(
-              request.body,
-              NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema),
-              terminator,
-            )
+        val decoded =
+          StreamFraming.fromSchema(streamed.schema) match {
+            case StreamFraming.Raw(wrap, _, _) => request.body.map(wrap)
+            case StreamFraming.Ndjson()        =>
+              Ndjson.decode(request.body, NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema))
+            case StreamFraming.Sse(terminator) =>
+              Sse.decode(
+                request.body,
+                NdjsonRestJsonCodecs.decoders.fromSchema(streamed.schema),
+                terminator,
+              )
+          }
+
+        decoded.handleErrorWith {
+          case error: PayloadError =>
+            Stream.raiseError[F](HttpContractError.fromPayloadError(error))
+          case error => Stream.raiseError[F](error)
         }
       }
 

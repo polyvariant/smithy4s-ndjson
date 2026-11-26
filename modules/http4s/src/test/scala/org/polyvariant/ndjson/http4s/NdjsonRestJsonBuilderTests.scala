@@ -441,7 +441,7 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
     }
   }
 
-  test("an event with malformed data fails the request rather than truncating the stream") {
+  test("an event with malformed data is a 400 rather than a truncated stream") {
     run(
       Request[IO](Method.POST, Uri.unsafeFromString("/collect"))
         .withEntity("""data: {"completed":{"total":1}}
@@ -449,7 +449,7 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
                       |data: not json
                       |
                       |""".stripMargin)
-    ).attempt.map(result => expect(result.isLeft))
+    ).map(response => expect(response.status == Status.BadRequest))
   }
 
   test("a streamed blob output is written verbatim, as octet-stream") {

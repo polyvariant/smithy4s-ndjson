@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.polyvariant.ndjson.NdjsonRestJsonTrait;
+import org.polyvariant.ndjson.ServerSentEventsTrait;
 import software.amazon.smithy.jsonschema.Schema;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.knowledge.HttpBinding;
@@ -47,7 +48,8 @@ import software.amazon.smithy.openapi.model.ResponseObject;
  *
  * <ul>
  *   <li>a {@code @streaming union} as {@code application/x-ndjson}, its schema being that of a
- *       single line;
+ *       single line, or as {@code text/event-stream} if it is marked {@code @serverSentEvents}, its
+ *       schema being that of a single event's data;
  *   <li>a {@code @streaming blob} as its {@code @mediaType}, or {@code application/octet-stream},
  *       with a binary schema in place of the base64 string alloy writes for a JSON blob, and the
  *       blob's documentation as that schema's description.
@@ -64,6 +66,8 @@ final class NdjsonRestJsonOpenApiProtocol implements OpenApiProtocol<NdjsonRestJ
   private static final String NDJSON = "application/x-ndjson";
 
   private static final String OCTET_STREAM = "application/octet-stream";
+
+  private static final String EVENT_STREAM = "text/event-stream";
 
   /**
    * Raw, because alloy's protocol is typed for its own trait. That type is never acted on: alloy
@@ -142,7 +146,7 @@ final class NdjsonRestJsonOpenApiProtocol implements OpenApiProtocol<NdjsonRestJ
 
   /**
    * Smithy restricts {@code @streaming} to {@code :is(blob, union)}, so anything that is not a blob
-   * is a union.
+   * is a union: server-sent events if it is marked {@code @serverSentEvents}, NDJSON otherwise.
    */
   private static Streamed framingOf(Shape target) {
     if (target.isBlobShape()) {
@@ -151,6 +155,9 @@ final class NdjsonRestJsonOpenApiProtocol implements OpenApiProtocol<NdjsonRestJ
         .map(MediaTypeTrait::getValue)
         .orElse(OCTET_STREAM);
       return new Streamed(mediaType, Optional.of(binary(target)));
+    }
+    if (target.hasTrait(ServerSentEventsTrait.class)) {
+      return new Streamed(EVENT_STREAM, Optional.empty());
     }
     return new Streamed(NDJSON, Optional.empty());
   }

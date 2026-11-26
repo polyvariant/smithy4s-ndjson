@@ -235,10 +235,11 @@ libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-openapi" % "<version
 Everything that doesn't stream is described exactly as alloy describes `simpleRestJson`. A
 `@streaming` payload is described by its framing:
 
-|                    | media type                                        | schema                      |
-| ------------------ | ------------------------------------------------- | --------------------------- |
-| `@streaming blob`  | its `@mediaType`, else `application/octet-stream` | a binary string             |
-| `@streaming union` | `application/x-ndjson`                            | the union: one line's worth |
+|                                        | media type                                        | schema                        |
+| -------------------------------------- | ------------------------------------------------- | ----------------------------- |
+| `@streaming blob`                      | its `@mediaType`, else `application/octet-stream` | a binary string               |
+| `@streaming union`                     | `application/x-ndjson`                            | the union: one line's worth   |
+| `@streaming union` `@serverSentEvents` | `text/event-stream`                               | the union: one event's `data` |
 
 Like the protocol, it's a plain Java artifact with no Scala suffix — note the single `%`. It runs
 inside the code generator, on whichever Scala version that uses (sbt 1 and sbt 2 already differ),
