@@ -76,16 +76,19 @@ object ServerHarness {
 
   // --- Operations that stream nothing: smithy4s's own harness ---
 
-  /** smithy4s's server harness, which is what it checks `simpleRestJson` with. It hands its router a
-    * kind-1 algebra, which can't stream, so that is adapted here into one whose streams are always
-    * empty.
+  /** smithy4s's server harness, which is what it checks `simpleRestJson` with. It hands its router
+    * a kind-1 algebra, which can't stream, so that is adapted here into one whose streams are
+    * always empty.
     */
   private val router: Router[IO] =
     new Router[IO] {
       type Protocol = NdjsonRestJson
       val protocolTag: ShapeTag[NdjsonRestJson] = NdjsonRestJson
 
-      def routes[Alg[_[_, _, _, _, _]]](alg: FunctorAlgebra[Alg, IO])(implicit
+      def routes[Alg[_[_, _, _, _, _]]](
+        alg: FunctorAlgebra[Alg, IO]
+      )(
+        implicit
         service: Service[Alg]
       ): Resource[IO, HttpRoutes[IO]] = {
         val unary = service.toPolyFunction(alg)
@@ -96,7 +99,12 @@ object ServerHarness {
               _ => unary(op).map(output => (output, Stream.empty))
           }
         )
-        Resource.pure(NdjsonRestJsonBuilder.routes(streaming)(using summon, service))
+        Resource.pure(
+          NdjsonRestJsonBuilder.routes(streaming)(
+            using summon,
+            service,
+          )
+        )
       }
 
     }
@@ -109,22 +117,24 @@ object ServerHarness {
     * own that doesn't stream, which is exactly how an error raised before a stream is encoded.
     */
   val smithy4sCases: List[ComplianceTest[IO]] = {
-    val streamedCaseIds = service
-      .endpoints
-      .toList
-      .filter(e => e.streamedInput.isDefined || e.streamedOutput.isDefined)
-      .flatMap { e =>
-        e.hints.get(HttpRequestTests).toList.flatMap(_.value.map(_.id)) ++
-          e.hints.get(HttpResponseTests).toList.flatMap(_.value.map(_.id))
-      }
-      .toSet
+    val streamedCaseIds =
+      service
+        .endpoints
+        .toList
+        .filter(e => e.streamedInput.isDefined || e.streamedOutput.isDefined)
+        .flatMap { e =>
+          e.hints.get(HttpRequestTests).toList.flatMap(_.value.map(_.id)) ++
+            e.hints.get(HttpResponseTests).toList.flatMap(_.value.map(_.id))
+        }
+        .toSet
 
     HttpProtocolCompliance.serverTests(router, service).filterNot(t => streamedCaseIds(t.id))
   }
 
   // --- @streaming blob: the body verbatim ---
 
-  /** An operation's own `@httpRequestTests` / `@httpResponseTests` cases, where it streams a blob. */
+  /** An operation's own `@httpRequestTests` / `@httpResponseTests` cases, where it streams a blob.
+    */
   def blobCases(model: Model): List[(String, IO[List[String]])] =
     service.endpoints.toList.flatMap(endpointBlobCases(model, _))
 
@@ -182,13 +192,14 @@ object ServerHarness {
         tc.headers.getOrElse(Map.empty),
         tc.body.getOrElse("").getBytes(UTF_8),
       )
-      response <- serve(endpoint) { (input, in) =>
-        for {
-          received <- in.map(bytes.from).compile.toList
-          _ <- seen.set(Some((input, received)))
-          output <- decode(endpoint.output, Document.obj()).liftTo[IO]
-        } yield (output, Stream.empty)
-      }(request)
+      response <-
+        serve(endpoint) { (input, in) =>
+          for {
+            received <- in.map(bytes.from).compile.toList
+            _ <- seen.set(Some((input, received)))
+            output <- decode(endpoint.output, Document.obj()).liftTo[IO]
+          } yield (output, Stream.empty)
+        }(request)
       recorded <- seen.get
     } yield recorded match {
       case None => List(s"the operation wasn't called; the response was ${response.status}")
@@ -221,9 +232,10 @@ object ServerHarness {
         Map.empty,
         Array.emptyByteArray,
       )
-      response <- serve(endpoint) { (_, _) =>
-        IO.pure((output, Stream.emits(blobParam(params, streamedMember)).map(bytes.to)))
-      }(request)
+      response <-
+        serve(endpoint) { (_, _) =>
+          IO.pure((output, Stream.emits(blobParam(params, streamedMember)).map(bytes.to)))
+        }(request)
       body <- response.body.compile.to(Array)
     } yield mismatch("status", response.status.code, tc.code) ++
       headerMismatches(response, tc.headers.getOrElse(Map.empty)) ++
@@ -238,10 +250,14 @@ object ServerHarness {
       case _ => Nil
     }
 
-  /** A `@streaming blob` is generated as a newtype over `Byte`; this is that newtype's bijection. */
+  /** A `@streaming blob` is generated as a newtype over `Byte`; this is that newtype's bijection.
+    */
   private def byteBijection[A](schema: Schema[A]): Either[Exception, Bijection[Byte, A]] =
     schema match {
-      case Schema.BijectionSchema(Schema.PrimitiveSchema(_, _, smithy4s.schema.Primitive.PByte), b) =>
+      case Schema.BijectionSchema(
+            Schema.PrimitiveSchema(_, _, smithy4s.schema.Primitive.PByte),
+            b,
+          ) =>
         Right(b)
       case _ => Left(new Exception(s"not a streamed blob: ${schema.shapeId}"))
     }
@@ -254,7 +270,9 @@ object ServerHarness {
       service
         .endpoints
         .find(_.id.name == op.getId.getName)
-        .map(endpoint => s"${endpoint.name}(server|events): ${tc.getId}" -> eventStream(model, op, endpoint, tc))
+        .map(endpoint =>
+          s"${endpoint.name}(server|events): ${tc.getId}" -> eventStream(model, op, endpoint, tc)
+        )
     }
 
   /** Sends `initialRequest` with the `request` events as its body, answers with
@@ -283,11 +301,15 @@ object ServerHarness {
       CaseModel.paramsDocument(model, node.getOrElse(Node.objectNode()), shape)
 
     /** Each event's values, decoded with the streamed member's schema. */
-    def values[A](streamed: smithy4s.schema.StreamingSchema[A], events: List[Event], shape: StructureShape)
-      : Either[Exception, List[A]] = {
-      val target = CaseModel
-        .streamedMember(model, shape.getId)
-        .fold[Shape](shape)(m => model.expectShape(m.getTarget))
+    def values[A](
+      streamed: smithy4s.schema.StreamingSchema[A],
+      events: List[Event],
+      shape: StructureShape,
+    ): Either[Exception, List[A]] = {
+      val target =
+        CaseModel
+          .streamedMember(model, shape.getId)
+          .fold[Shape](shape)(m => model.expectShape(m.getTarget))
       events.flatMap(_.getParams.toScala).traverse { p =>
         decode(streamed.schema, CaseModel.paramsDocument(model, p, target))
       }
@@ -299,12 +321,17 @@ object ServerHarness {
     val requestBody: Array[Byte] =
       inFraming.fold(stringMember(initialRequest, "body").getOrElse("").getBytes(UTF_8)) { framing =>
         requestEvents.toArray.flatMap { e =>
-          e.getBytes.toScala.getOrElse(framing.frame(e.getBody.toScala.getOrElse("")).getBytes(UTF_8))
+          e.getBytes
+            .toScala
+            .getOrElse(framing.frame(e.getBody.toScala.getOrElse("")).getBytes(UTF_8))
         }
       }
 
     for {
-      expectedInput <- decode(endpoint.input, params(tc.getInitialRequestParams.toScala, inputShape))
+      expectedInput <- decode(
+        endpoint.input,
+        params(tc.getInitialRequestParams.toScala, inputShape),
+      )
         .liftTo[IO]
       expectedIn <- endpoint
         .streamedInput
@@ -324,14 +351,18 @@ object ServerHarness {
         stringMap(initialRequest, "headers"),
         requestBody,
       )
-      response <- serve(endpoint) { (input, in) =>
-        for {
-          received <- in.compile.toList
-          _ <- seen.set(Some((input, received)))
-          output <- decode(endpoint.output, params(tc.getInitialResponseParams.toScala, outputShape))
-            .liftTo[IO]
-        } yield (output, Stream.emits(out))
-      }(request)
+      response <-
+        serve(endpoint) { (input, in) =>
+          for {
+            received <- in.compile.toList
+            _ <- seen.set(Some((input, received)))
+            output <- decode(
+              endpoint.output,
+              params(tc.getInitialResponseParams.toScala, outputShape),
+            )
+              .liftTo[IO]
+          } yield (output, Stream.emits(out))
+        }(request)
       body <- response.body.compile.to(Array).map(new String(_, UTF_8))
       recorded <- seen.get
     } yield {
@@ -339,17 +370,29 @@ object ServerHarness {
       val status = expectedCode.toList.flatMap(mismatch("status", response.status.code, _))
 
       if (failing)
-        status ++ Option.when(response.status.isSuccess)(s"expected a failure, got ${response.status}")
+        status ++ Option.when(response.status.isSuccess)(
+          s"expected a failure, got ${response.status}"
+        )
       else {
-        val handed = recorded match {
-          case None => List(s"the operation wasn't called; the response was ${response.status}: $body")
-          case Some((input, received)) =>
-            mismatch("input", input, expectedInput) ++ mismatch("streamed input", received, expectedIn)
-        }
-        val written = outFraming.fold(
-          stringMember(initialResponse, "body").toList.flatMap(jsonMismatch("body", body, _))
-        )(framing => eventMismatches(framing, body, responseEvents))
-        handed ++ status ++ headerMismatches(response, stringMap(initialResponse, "headers")) ++ written
+        val handed =
+          recorded match {
+            case None =>
+              List(s"the operation wasn't called; the response was ${response.status}: $body")
+            case Some((input, received)) =>
+              mismatch("input", input, expectedInput) ++ mismatch(
+                "streamed input",
+                received,
+                expectedIn,
+              )
+          }
+        val written =
+          outFraming.fold(
+            stringMember(initialResponse, "body").toList.flatMap(jsonMismatch("body", body, _))
+          )(framing => eventMismatches(framing, body, responseEvents))
+        handed ++ status ++ headerMismatches(
+          response,
+          stringMap(initialResponse, "headers"),
+        ) ++ written
       }
     }
   }
@@ -359,11 +402,13 @@ object ServerHarness {
     */
   private def eventMismatches(framing: Framing, body: String, events: List[Event]): List[String] =
     framing.split(body) match {
-      case Left(problem) => List(problem)
+      case Left(problem)  => List(problem)
       case Right(written) =>
         val expected = events.map(e => (e.getBody.toScala.getOrElse(""), e.getParams.isPresent))
         if (written.size != expected.size)
-          List(s"wrote ${written.size} events, expected ${expected.size}: ${body.replace("\n", "\\n")}")
+          List(
+            s"wrote ${written.size} events, expected ${expected.size}: ${body.replace("\n", "\\n")}"
+          )
         else
           written.zip(expected).flatMap {
             case (actual, (data, true))  => jsonMismatch("event", actual, data)
@@ -376,7 +421,9 @@ object ServerHarness {
   /** Serves one request with `NdjsonRestJsonBuilder`, routing it to `endpoint`'s operation, whose
     * implementation is `run`. Any other operation being called is a failure.
     */
-  private def serve[I, E, O, SI, SO](endpoint: Endpoint[I, E, O, SI, SO])(
+  private def serve[I, E, O, SI, SO](
+    endpoint: Endpoint[I, E, O, SI, SO]
+  )(
     run: (I, Stream[IO, SI]) => IO[(O, Stream[IO, SO])]
   ): Request[IO] => IO[Response[IO]] = {
     val impl = service.fromPolyFunction[WithStreamedIO[IO]](
@@ -405,7 +452,14 @@ object ServerHarness {
   ): IO[Request[IO]] =
     (
       Method.fromString(method).liftTo[IO],
-      Uri.fromString(if (query.isEmpty) uri else s"$uri?${query.mkString("&")}").liftTo[IO],
+      Uri
+        .fromString(
+          if (query.isEmpty)
+            uri
+          else
+            s"$uri?${query.mkString("&")}"
+        )
+        .liftTo[IO],
     ).mapN { (m, u) =>
       Request[IO](
         method = m,
@@ -424,7 +478,9 @@ object ServerHarness {
     : List[String] =
     expected.toList.flatMap { (name, value) =>
       val actual = response.headers.get(CIString(name)).map(_.head.value)
-      Option.when(!actual.contains(value))(s"header $name: ${actual.getOrElse("absent")}, expected $value")
+      Option.when(!actual.contains(value))(
+        s"header $name: ${actual.getOrElse("absent")}, expected $value"
+      )
     }
 
   private def mismatch[A](what: String, actual: A, expected: A): List[String] =
@@ -442,7 +498,11 @@ object ServerHarness {
     node.getStringMember(name).toScala.map(_.getValue)
 
   private def stringList(node: ObjectNode, name: String): List[String] =
-    node.getArrayMember(name).toScala.toList.flatMap(_.getElementsAs(_.expectStringNode.getValue).asScala)
+    node
+      .getArrayMember(name)
+      .toScala
+      .toList
+      .flatMap(_.getElementsAs(_.expectStringNode.getValue).asScala)
 
   private def stringMap(node: ObjectNode, name: String): Map[String, String] =
     node

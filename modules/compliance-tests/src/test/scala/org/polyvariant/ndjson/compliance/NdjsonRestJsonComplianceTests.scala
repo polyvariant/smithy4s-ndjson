@@ -50,7 +50,10 @@ object NdjsonRestJsonComplianceTests extends SimpleIOSuite {
       (ServerHarness.smithy4sCases.map(_.endpoint.name) ++
         blobCases.map(_._1.takeWhile(_ != '(')) ++
         eventStreamCases.map(_._1.takeWhile(_ != '('))).toSet
-    expect.same(NdjsonRestJsonCompliance.endpoints.map(_.name).toSet.diff(covered), Set.empty[String])
+    expect.same(
+      NdjsonRestJsonCompliance.endpoints.map(_.name).toSet.diff(covered),
+      Set.empty[String],
+    )
   }
 
 }

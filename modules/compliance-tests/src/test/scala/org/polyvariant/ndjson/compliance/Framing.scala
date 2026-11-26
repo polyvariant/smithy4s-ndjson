@@ -20,12 +20,12 @@ import cats.syntax.all.*
 import org.polyvariant.ndjson.ServerSentEvents
 import smithy4s.schema.Schema
 
-/** How a `@streaming union` is framed, as the compliance tests describe it: the bytes an event stands
-  * for when it states only its `body`, and how a written body splits back into events.
+/** How a `@streaming union` is framed, as the compliance tests describe it: the bytes an event
+  * stands for when it states only its `body`, and how a written body splits back into events.
   *
-  * Splitting is strict on purpose. A reader forgives a blank line, `\r\n` or a comment, and the cases
-  * check that it does; but these split what an implementation ''wrote'', and the protocol writes
-  * none of those.
+  * Splitting is strict on purpose. A reader forgives a blank line, `\r\n` or a comment, and the
+  * cases check that it does; but these split what an implementation ''wrote'', and the protocol
+  * writes none of those.
   */
 enum Framing {
   case Ndjson, Sse
@@ -41,7 +41,11 @@ enum Framing {
     this match {
       case Ndjson =>
         terminated(body, "\n").flatMap(_.traverse { line =>
-          Either.cond(line.nonEmpty && !line.contains('\r'), line, s"unexpected line: ${show(line)}")
+          Either.cond(
+            line.nonEmpty && !line.contains('\r'),
+            line,
+            s"unexpected line: ${show(line)}",
+          )
         })
       case Sse =>
         terminated(body, "\n\n").flatMap(_.traverse { event =>

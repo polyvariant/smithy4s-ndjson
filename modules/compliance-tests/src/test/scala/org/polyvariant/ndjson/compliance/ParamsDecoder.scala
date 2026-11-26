@@ -43,7 +43,9 @@ import smithy4s.time.ZoneOffset
 object ParamsDecoder {
 
   def decode[A](schema: Schema[A], params: Document): Either[PayloadError, A] =
-    compiler.fromSchema(schema.transformHintsTransitively(_.filter(_.keyId == Nullable.id))).decode(params)
+    compiler
+      .fromSchema(schema.transformHintsTransitively(_.filter(_.keyId == Nullable.id)))
+      .decode(params)
 
   private object compiler extends CachedSchemaCompiler.Impl[Document.Decoder] {
 
@@ -69,7 +71,7 @@ object ParamsDecoder {
       tag match {
         case Primitive.PTimestamp =>
           from("Timestamp") { case Document.DNumber(seconds) => timestamp(seconds) }
-        case Primitive.PBlob => from("Blob") { case Document.DString(text) => Blob(text) }
+        case Primitive.PBlob           => from("Blob") { case Document.DString(text) => Blob(text) }
         case Primitive.POffsetDateTime =>
           from("OffsetDateTime") { case Document.DNumber(seconds) =>
             val t = timestamp(seconds)

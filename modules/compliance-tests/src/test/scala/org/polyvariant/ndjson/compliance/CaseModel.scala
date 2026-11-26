@@ -85,15 +85,14 @@ object CaseModel {
   /** A case's `params`, read against `shape`, as the document [[ParamsDecoder]] reads.
     *
     * The two agree on everything but timestamps. `@eventStreamTests` has them in their member's
-    * `@timestampFormat` — Smithy's validator insists — while the decoder only reads epoch seconds, as
-    * `@httpRequestTests` has them. So a formatted timestamp is converted here, which takes the shape
-    * to know which format it is in.
+    * `@timestampFormat` — Smithy's validator insists — while the decoder only reads epoch seconds,
+    * as `@httpRequestTests` has them. So a formatted timestamp is converted here, which takes the
+    * shape to know which format it is in.
     */
   def paramsDocument(model: Model, node: Node, shape: Shape): Document =
     read(model, node, shape, memberFormat = None)
 
-  private def read(model: Model, node: Node, shape: Shape, memberFormat: Option[String])
-    : Document =
+  private def read(model: Model, node: Node, shape: Shape, memberFormat: Option[String]): Document =
     shape match {
       case member: MemberShape =>
         read(model, node, model.expectShape(member.getTarget), formatOf(member))
