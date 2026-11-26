@@ -11,14 +11,14 @@ bodies.
 ## Installation
 
 ```scala
-libraryDependencies += "org.polyvariant" %% "smithy4s-ndjson-http4s" % "0.1.1"
+libraryDependencies += "org.polyvariant" %% "smithy4s-ndjson-http4s" % "0.4.0"
 ```
 
 The protocol trait is published separately, as a plain Java artifact with no Scala suffix — so
 `smithy-build`, the Smithy CLI, or codegen for another language can depend on the protocol alone:
 
 ```scala
-libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol" % "0.1.1"
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-protocol" % "0.4.0"
 ```
 
 Scala users don't need it explicitly. `smithy4s-ndjson-http4s` depends on `smithy4s-ndjson-core`,
@@ -229,7 +229,7 @@ the codegen model path, and every `@ndjsonRestJson` service gets a spec too, whi
 `smithy4s-http4s-swagger` serves like any other.
 
 ```scala
-libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-openapi" % "<version>" % Smithy4s
+libraryDependencies += "org.polyvariant" % "smithy4s-ndjson-openapi" % "0.4.0" % Smithy4s
 ```
 
 Everything that doesn't stream is described exactly as alloy describes `simpleRestJson`. A
