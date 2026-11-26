@@ -29,17 +29,20 @@ use smithy.test#eventStreamTests
 operation EchoRecords {
     input := {
         @httpPayload
-        records: Record
+        records: Entry
     }
 
     output := {
         @httpPayload
-        records: Record
+        records: Entry
     }
 }
 
+// Not `Record`: a TypeScript generator that names types after shapes would
+// shadow TypeScript's own `Record<K, V>`, which is a codegen bug, but not one
+// this protocol's tests are about.
 @streaming
-union Record {
+union Entry {
     @jsonName("renamed_tag")
     renamed: Renamed
 
