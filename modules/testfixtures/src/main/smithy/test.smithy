@@ -238,6 +238,7 @@ structure Remove {
 @streaming
 blob Payload
 
+/// The report's rows, as CSV.
 @streaming
 @mediaType("text/csv")
 blob Csv
