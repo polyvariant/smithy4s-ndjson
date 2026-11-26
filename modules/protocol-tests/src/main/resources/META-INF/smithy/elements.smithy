@@ -216,7 +216,7 @@ structure Ordered {
 
 apply EchoRecords @eventStreamTests([
     {
-        id: "RecordsJsonName"
+        id: "NdjsonRestJsonRecordsJsonName"
         documentation: "@jsonName renames a union's tag and a structure's member."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -252,7 +252,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsTimestampFormat"
+        id: "NdjsonRestJsonRecordsTimestampFormat"
         documentation: "A timestamp is epoch seconds by default, and @timestampFormat picks another format."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -288,7 +288,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsDefaultsOnServer"
+        id: "NdjsonRestJsonRecordsDefaultsOnServer"
         documentation: "A member left out takes its @default when read."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -316,7 +316,7 @@ apply EchoRecords @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "RecordsDefaultsOnClient"
+        id: "NdjsonRestJsonRecordsDefaultsOnClient"
         documentation: "A member left out takes its @default when read."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -344,7 +344,7 @@ apply EchoRecords @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "RecordsNullable"
+        id: "NdjsonRestJsonRecordsNullable"
         documentation: "An explicit null in a @nullable member is kept, and written back."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -380,7 +380,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsDiscriminated"
+        id: "NdjsonRestJsonRecordsDiscriminated"
         documentation: "A @discriminated union puts its tag in the named field, beside the member's own."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -424,7 +424,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsUntagged"
+        id: "NdjsonRestJsonRecordsUntagged"
         documentation: "An @untagged union is the member's value alone."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -486,7 +486,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsJsonUnknownUnionMember"
+        id: "NdjsonRestJsonRecordsJsonUnknownUnionMember"
         documentation: "A union's @jsonUnknown member holds a tag the union doesn't declare, and writes it back as it was."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -534,7 +534,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsJsonUnknownStructureMembers"
+        id: "NdjsonRestJsonRecordsJsonUnknownStructureMembers"
         documentation: "A structure's @jsonUnknown map holds the members the structure doesn't declare, and writes them back beside the rest."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -576,7 +576,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsOpenEnum"
+        id: "NdjsonRestJsonRecordsOpenEnum"
         documentation: "An @openEnum, string and int. Only declared values: Smithy's node validation doesn't know @openEnum and rejects any other value in params, so reading an undeclared one can't be written as a case."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -612,7 +612,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsAlloyFormats"
+        id: "NdjsonRestJsonRecordsAlloyFormats"
         documentation: "@uuidFormat, @dateFormat, @localTimeFormat, @durationSecondsFormat and @offsetDateTimeFormat."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -660,7 +660,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsPreserveKeyOrder"
+        id: "NdjsonRestJsonRecordsPreserveKeyOrder"
         documentation: "A @preserveKeyOrder document. Bodies are compared as JSON, where key order doesn't count, so this only checks such a document is read and written at all."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -700,7 +700,7 @@ apply EchoRecords @eventStreamTests([
         ]
     }
     {
-        id: "RecordsRejectsInvalidUuidOnServer"
+        id: "NdjsonRestJsonRecordsRejectsInvalidUuidOnServer"
         documentation: "A @uuidFormat string that isn't a UUID is a 400: {\"formats\":{\"id\":\"nope\",...}}\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -723,7 +723,7 @@ apply EchoRecords @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "RecordsRejectsInvalidUuidOnClient"
+        id: "NdjsonRestJsonRecordsRejectsInvalidUuidOnClient"
         documentation: "A @uuidFormat string that isn't a UUID fails the stream: {\"formats\":{\"id\":\"nope\",...}}\\n"
         protocol: ndjsonRestJson
         initialRequest: {

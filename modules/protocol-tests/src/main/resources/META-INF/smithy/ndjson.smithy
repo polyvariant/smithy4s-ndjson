@@ -67,7 +67,7 @@ structure TopicNotFound {
 
 apply TopicNotFound @httpResponseTests([
     {
-        id: "TopicNotFoundError"
+        id: "NdjsonRestJsonTopicNotFoundError"
         documentation: "A declared error raised before a stream starts is an ordinary error response."
         protocol: ndjsonRestJson
         code: 404
@@ -81,7 +81,7 @@ apply TopicNotFound @httpResponseTests([
 
 apply Subscribe @eventStreamTests([
     {
-        id: "SubscribeNdjson"
+        id: "NdjsonRestJsonSubscribeNdjson"
         documentation: "Each value is one line of JSON, newline-terminated, under application/x-ndjson, with the envelope's bindings on the response."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 2 }
@@ -131,7 +131,7 @@ apply Subscribe @eventStreamTests([
         ]
     }
     {
-        id: "SubscribeEmptyStream"
+        id: "NdjsonRestJsonSubscribeEmptyStream"
         documentation: "A stream with no values is an empty body."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "quiet", limit: 0 }
@@ -152,7 +152,7 @@ apply Subscribe @eventStreamTests([
         initialResponseShape: "smithy.test#InitialHttpResponse"
     }
     {
-        id: "SubscribeResponseCode"
+        id: "NdjsonRestJsonSubscribeResponseCode"
         documentation: "@httpResponseCode on the envelope sets the status of a streamed response."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -184,7 +184,7 @@ apply Subscribe @eventStreamTests([
         ]
     }
     {
-        id: "SubscribeSkipsBlankLines"
+        id: "NdjsonRestJsonSubscribeSkipsBlankLines"
         documentation: "A blank line between two values (here: {\"progress\":{\"soFar\":1}}\\n\\n{\"progress\":{\"soFar\":2}}\\n) is skipped."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 2 }
@@ -230,7 +230,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeAcceptsCrlf"
+        id: "NdjsonRestJsonSubscribeAcceptsCrlf"
         documentation: "A line may end in \\r\\n: {\"progress\":{\"soFar\":1}}\\r\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -264,7 +264,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeAcceptsUnterminatedLastLine"
+        id: "NdjsonRestJsonSubscribeAcceptsUnterminatedLastLine"
         documentation: "The last line may lack its newline: {\"progress\":{\"soFar\":1}}"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -298,7 +298,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeRejectsMalformedLine"
+        id: "NdjsonRestJsonSubscribeRejectsMalformedLine"
         documentation: "A line that is not JSON fails the stream: not json\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -329,7 +329,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeRejectsUnknownMember"
+        id: "NdjsonRestJsonSubscribeRejectsUnknownMember"
         documentation: "A line naming a member the union doesn't have fails the stream: {\"mystery\":{}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -360,7 +360,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeRejectsMissingRequired"
+        id: "NdjsonRestJsonSubscribeRejectsMissingRequired"
         documentation: "A value missing a @required member fails the stream: {\"progress\":{}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -391,7 +391,7 @@ apply Subscribe @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "SubscribeRejectsOutOfRange"
+        id: "NdjsonRestJsonSubscribeRejectsOutOfRange"
         documentation: "A value outside its @range fails the stream: {\"progress\":{\"soFar\":-1}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news", limit: 1 }
@@ -468,7 +468,7 @@ structure Remove {
 
 apply Publish @eventStreamTests([
     {
-        id: "PublishNdjson"
+        id: "NdjsonRestJsonPublishNdjson"
         documentation: "Each value is one line of JSON, newline-terminated, under application/x-ndjson, with the envelope's bindings on the request."
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory", batch: "b1" }
@@ -509,7 +509,7 @@ apply Publish @eventStreamTests([
         ]
     }
     {
-        id: "PublishEmptyStream"
+        id: "NdjsonRestJsonPublishEmptyStream"
         documentation: "A stream with no values is an empty body."
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -531,7 +531,7 @@ apply Publish @eventStreamTests([
         initialResponseShape: "smithy.test#InitialHttpResponse"
     }
     {
-        id: "PublishSkipsBlankLines"
+        id: "NdjsonRestJsonPublishSkipsBlankLines"
         documentation: "A blank line between two values (here: {\"remove\":{\"key\":\"a\"}}\\n\\n{\"remove\":{\"key\":\"b\"}}\\n) is skipped."
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -577,7 +577,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishAcceptsCrlf"
+        id: "NdjsonRestJsonPublishAcceptsCrlf"
         documentation: "A line may end in \\r\\n: {\"remove\":{\"key\":\"a\"}}\\r\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -611,7 +611,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishAcceptsUnterminatedLastLine"
+        id: "NdjsonRestJsonPublishAcceptsUnterminatedLastLine"
         documentation: "The last line may lack its newline: {\"remove\":{\"key\":\"a\"}}"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -645,7 +645,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsMalformedLine"
+        id: "NdjsonRestJsonPublishRejectsMalformedLine"
         documentation: "A line that is not JSON is a 400: not json\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -669,7 +669,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsUnknownMember"
+        id: "NdjsonRestJsonPublishRejectsUnknownMember"
         documentation: "A line naming a member the union doesn't have is a 400: {\"mystery\":{}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -693,7 +693,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsMissingRequired"
+        id: "NdjsonRestJsonPublishRejectsMissingRequired"
         documentation: "A value missing a @required member is a 400: {\"add\":{}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -717,7 +717,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsTooLong"
+        id: "NdjsonRestJsonPublishRejectsTooLong"
         documentation: "A value over its @length is a 400: {\"add\":{\"key\":\"abcdefghi\"}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -741,7 +741,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsPatternMismatch"
+        id: "NdjsonRestJsonPublishRejectsPatternMismatch"
         documentation: "A value not matching its @pattern is a 400: {\"add\":{\"key\":\"ABC\"}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }
@@ -765,7 +765,7 @@ apply Publish @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "PublishRejectsOutOfRange"
+        id: "NdjsonRestJsonPublishRejectsOutOfRange"
         documentation: "A value outside its @range is a 400: {\"add\":{\"key\":\"abc\",\"weight\":11}}\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { channel: "inventory" }

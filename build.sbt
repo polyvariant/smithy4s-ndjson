@@ -358,6 +358,12 @@ lazy val complianceTests = project
   )
   // On the test classpath, so the model — `@eventStreamTests` included — can be loaded from it.
   .dependsOn(protocolTests % Test)
+  .settings(
+    // Loaded alongside the cases, because Smithy requires a case's ID to be unique across every
+    // model loaded together: an implementation running alloy's suite too would otherwise fail to
+    // load both, which loading them here catches first.
+    libraryDependencies += "com.disneystreaming.alloy" % "alloy-protocol-tests" % alloyVersion % Test
+  )
 
 /** `protocol` is aggregated by the root, exactly as it was before the Native cross-build.
   *

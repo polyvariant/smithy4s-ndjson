@@ -40,6 +40,10 @@ $version: "2"
 //   `@httpResponseTests`, but in its member's `@timestampFormat` in
 //   `@eventStreamTests` (epoch seconds when it has none). A blob is its text.
 //
+// Every case's ID starts with `NdjsonRestJson`: Smithy requires IDs to be
+// unique across every model loaded together, which includes other suites,
+// such as alloy's.
+//
 // A streamed union member is never `@required` here: `@eventStreamTests`
 // checks `initialRequestParams` / `initialResponseParams` against the whole
 // input / output, and the stream's values are in `events` instead.

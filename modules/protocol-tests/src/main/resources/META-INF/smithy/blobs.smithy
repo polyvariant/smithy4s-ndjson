@@ -36,7 +36,7 @@ operation PutBlob {
 
 apply PutBlob @httpRequestTests([
     {
-        id: "PutBlobRequest"
+        id: "NdjsonRestJsonPutBlobRequest"
         documentation: "The request body is the blob, verbatim, as application/octet-stream."
         protocol: ndjsonRestJson
         method: "POST"
@@ -54,7 +54,7 @@ apply PutBlob @httpRequestTests([
         }
     }
     {
-        id: "PutBlobEmptyRequest"
+        id: "NdjsonRestJsonPutBlobEmptyRequest"
         documentation: "An empty blob is an empty body."
         protocol: ndjsonRestJson
         method: "POST"
@@ -87,7 +87,7 @@ operation GetBlob {
 
 apply GetBlob @httpResponseTests([
     {
-        id: "GetBlobResponse"
+        id: "NdjsonRestJsonGetBlobResponse"
         documentation: "The response body is the blob, verbatim, as application/octet-stream."
         protocol: ndjsonRestJson
         code: 200
@@ -103,7 +103,7 @@ apply GetBlob @httpResponseTests([
         }
     }
     {
-        id: "GetBlobEmptyResponse"
+        id: "NdjsonRestJsonGetBlobEmptyResponse"
         documentation: "An empty blob is an empty body, still labelled application/octet-stream."
         protocol: ndjsonRestJson
         code: 200
@@ -132,7 +132,7 @@ operation EchoCsv {
 
 apply EchoCsv @httpRequestTests([
     {
-        id: "EchoCsvRequest"
+        id: "NdjsonRestJsonEchoCsvRequest"
         documentation: "A blob with a @mediaType is sent verbatim, as that media type."
         protocol: ndjsonRestJson
         method: "POST"
@@ -153,7 +153,7 @@ apply EchoCsv @httpRequestTests([
 
 apply EchoCsv @httpResponseTests([
     {
-        id: "EchoCsvResponse"
+        id: "NdjsonRestJsonEchoCsvResponse"
         documentation: "A blob with a @mediaType is returned verbatim, as that media type."
         protocol: ndjsonRestJson
         code: 200

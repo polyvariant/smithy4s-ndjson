@@ -63,7 +63,7 @@ operation UnaryBindings {
 
 apply UnaryBindings @httpRequestTests([
     {
-        id: "UnaryBindingsRequest"
+        id: "NdjsonRestJsonUnaryBindingsRequest"
         documentation: "Label, query, header and prefix-header bindings are read alongside a JSON body."
         protocol: ndjsonRestJson
         method: "POST"
@@ -88,7 +88,7 @@ apply UnaryBindings @httpRequestTests([
 
 apply UnaryBindings @httpResponseTests([
     {
-        id: "UnaryBindingsResponse"
+        id: "NdjsonRestJsonUnaryBindingsResponse"
         documentation: "Header, prefix-header and response-code bindings are written alongside a JSON body."
         protocol: ndjsonRestJson
         code: 201
@@ -117,7 +117,7 @@ structure NotFound {
 
 apply NotFound @httpResponseTests([
     {
-        id: "NotFoundError"
+        id: "NdjsonRestJsonNotFoundError"
         documentation: "A declared error gets its @httpError status, its header bindings and the error type header."
         protocol: ndjsonRestJson
         code: 404
@@ -142,7 +142,7 @@ operation UnaryQueryParams {
 
 apply UnaryQueryParams @httpRequestTests([
     {
-        id: "UnaryQueryParamsRequest"
+        id: "NdjsonRestJsonUnaryQueryParamsRequest"
         documentation: "Query parameters bound by @httpQueryParams."
         protocol: ndjsonRestJson
         method: "GET"
@@ -176,7 +176,7 @@ structure Greeting {
 
 apply UnaryPayload @httpRequestTests([
     {
-        id: "UnaryPayloadRequest"
+        id: "NdjsonRestJsonUnaryPayloadRequest"
         documentation: "An @httpPayload structure is the whole request body."
         protocol: ndjsonRestJson
         method: "PUT"
@@ -193,7 +193,7 @@ apply UnaryPayload @httpRequestTests([
 
 apply UnaryPayload @httpResponseTests([
     {
-        id: "UnaryPayloadResponse"
+        id: "NdjsonRestJsonUnaryPayloadResponse"
         documentation: "An @httpPayload structure is the whole response body, under the operation's @http code."
         protocol: ndjsonRestJson
         code: 201

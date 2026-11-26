@@ -90,7 +90,7 @@ operation Emit {
 
 apply Watch @eventStreamTests([
     {
-        id: "WatchSse"
+        id: "NdjsonRestJsonWatchSse"
         documentation: "Each value is the data of one event, under text/event-stream, and the terminator's event follows the last."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -134,7 +134,7 @@ apply Watch @eventStreamTests([
         ]
     }
     {
-        id: "WatchEmptyStream"
+        id: "NdjsonRestJsonWatchEmptyStream"
         documentation: "A stream with no values is the terminator's event alone."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "quiet" }
@@ -160,7 +160,7 @@ apply Watch @eventStreamTests([
         ]
     }
     {
-        id: "WatchSkipsCommentsAndEventsWithoutData"
+        id: "NdjsonRestJsonWatchSkipsCommentsAndEventsWithoutData"
         documentation: "A comment and an event without data deliver nothing: :keep-alive\\n\\nid: 1\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -204,7 +204,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchIgnoresOtherFields"
+        id: "NdjsonRestJsonWatchIgnoresOtherFields"
         documentation: "The event, id and retry fields are skipped: event: progress\\nid: 7\\nretry: 1000\\ndata: {\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -237,7 +237,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchJoinsDataLines"
+        id: "NdjsonRestJsonWatchJoinsDataLines"
         documentation: "An event's data fields are joined with newlines: data: {\"progress\":\\ndata: {\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -270,7 +270,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchAcceptsCrlf"
+        id: "NdjsonRestJsonWatchAcceptsCrlf"
         documentation: "Lines may end in \\r\\n: data: {\"progress\":{\"soFar\":1}}\\r\\n\\r\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -303,7 +303,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchAcceptsCr"
+        id: "NdjsonRestJsonWatchAcceptsCr"
         documentation: "Lines may end in \\r: data: {\"progress\":{\"soFar\":1}}\\r\\r"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -336,7 +336,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchAcceptsDataWithoutSpace"
+        id: "NdjsonRestJsonWatchAcceptsDataWithoutSpace"
         documentation: "The space after a field's colon is optional: data:{\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -369,7 +369,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchIgnoresByteOrderMark"
+        id: "NdjsonRestJsonWatchIgnoresByteOrderMark"
         documentation: "A byte order mark at the start of the stream is skipped: \\uFEFFdata: {\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -402,7 +402,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchDropsUnterminatedEvent"
+        id: "NdjsonRestJsonWatchDropsUnterminatedEvent"
         documentation: "An event cut off before its blank line is not delivered: data: {\"progress\":{\"soFar\":2}}\\n at the end of the stream."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -438,7 +438,7 @@ apply Watch @eventStreamTests([
         appliesTo: "client"
     }
     {
-        id: "WatchRejectsMalformedData"
+        id: "NdjsonRestJsonWatchRejectsMalformedData"
         documentation: "Data that is not JSON fails the stream: data: not json\\n\\n"
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "news" }
@@ -471,7 +471,7 @@ apply Watch @eventStreamTests([
 
 apply Collect @eventStreamTests([
     {
-        id: "CollectSse"
+        id: "NdjsonRestJsonCollectSse"
         documentation: "Each value is the data of one event, under text/event-stream, and the terminator's event follows the last."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -515,7 +515,7 @@ apply Collect @eventStreamTests([
         ]
     }
     {
-        id: "CollectEmptyStream"
+        id: "NdjsonRestJsonCollectEmptyStream"
         documentation: "A stream with no values is the terminator's event alone."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -541,7 +541,7 @@ apply Collect @eventStreamTests([
         ]
     }
     {
-        id: "CollectSkipsCommentsAndEventsWithoutData"
+        id: "NdjsonRestJsonCollectSkipsCommentsAndEventsWithoutData"
         documentation: "A comment and an event without data deliver nothing: :keep-alive\\n\\nid: 1\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -585,7 +585,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectIgnoresOtherFields"
+        id: "NdjsonRestJsonCollectIgnoresOtherFields"
         documentation: "The event, id and retry fields are skipped: event: progress\\nid: 7\\nretry: 1000\\ndata: {\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -618,7 +618,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectJoinsDataLines"
+        id: "NdjsonRestJsonCollectJoinsDataLines"
         documentation: "An event's data fields are joined with newlines: data: {\"progress\":\\ndata: {\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -651,7 +651,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectAcceptsCrlf"
+        id: "NdjsonRestJsonCollectAcceptsCrlf"
         documentation: "Lines may end in \\r\\n: data: {\"progress\":{\"soFar\":1}}\\r\\n\\r\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -684,7 +684,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectAcceptsCr"
+        id: "NdjsonRestJsonCollectAcceptsCr"
         documentation: "Lines may end in \\r: data: {\"progress\":{\"soFar\":1}}\\r\\r"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -717,7 +717,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectAcceptsDataWithoutSpace"
+        id: "NdjsonRestJsonCollectAcceptsDataWithoutSpace"
         documentation: "The space after a field's colon is optional: data:{\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -750,7 +750,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectIgnoresByteOrderMark"
+        id: "NdjsonRestJsonCollectIgnoresByteOrderMark"
         documentation: "A byte order mark at the start of the stream is skipped: \\uFEFFdata: {\"progress\":{\"soFar\":1}}\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -783,7 +783,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectDropsUnterminatedEvent"
+        id: "NdjsonRestJsonCollectDropsUnterminatedEvent"
         documentation: "An event cut off before its blank line is not delivered: data: {\"progress\":{\"soFar\":2}}\\n at the end of the stream."
         protocol: ndjsonRestJson
         initialRequest: {
@@ -819,7 +819,7 @@ apply Collect @eventStreamTests([
         appliesTo: "server"
     }
     {
-        id: "CollectRejectsMalformedData"
+        id: "NdjsonRestJsonCollectRejectsMalformedData"
         documentation: "Data that is not JSON is a 400: data: not json\\n\\n"
         protocol: ndjsonRestJson
         initialRequest: {
@@ -845,7 +845,7 @@ apply Collect @eventStreamTests([
 
 apply Listen @eventStreamTests([
     {
-        id: "ListenSseWithoutTerminator"
+        id: "NdjsonRestJsonListenSseWithoutTerminator"
         documentation: "Without a terminator, the stream ends with the last value's event."
         protocol: ndjsonRestJson
         initialRequestParams: { topic: "pings" }
@@ -888,7 +888,7 @@ apply Listen @eventStreamTests([
 
 apply Emit @eventStreamTests([
     {
-        id: "EmitSseWithoutTerminator"
+        id: "NdjsonRestJsonEmitSseWithoutTerminator"
         documentation: "Without a terminator, the stream ends with the last value's event."
         protocol: ndjsonRestJson
         initialRequest: {
