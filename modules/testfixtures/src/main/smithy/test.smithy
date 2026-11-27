@@ -129,6 +129,11 @@ operation Fallible {
         @httpLabel
         @required
         which: String
+
+        /// Unused: an input that can fail to decode, so that failure can be mapped to an error the
+        /// operation declares.
+        @httpQuery("attempt")
+        attempt: Integer
     }
 
     output := {
