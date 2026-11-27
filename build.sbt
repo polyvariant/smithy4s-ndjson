@@ -1,4 +1,4 @@
-ThisBuild / tlBaseVersion := "0.4"
+ThisBuild / tlBaseVersion := "0.5"
 ThisBuild / organization := "org.polyvariant"
 ThisBuild / organizationName := "Polyvariant"
 ThisBuild / startYear := Some(2026)
@@ -11,7 +11,8 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq(
 )
 
 ThisBuild / scalaVersion := "3.3.9"
-ThisBuild / tlJdkRelease := Some(11)
+ThisBuild / tlJdkRelease := Some(17)
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / tlFatalWarnings := false
 ThisBuild / resolvers += Resolver.sonatypeCentralSnapshots
 
@@ -41,6 +42,7 @@ val alloyVersion = "0.3.41"
 val http4sVersion = "0.23.38"
 val fs2Version = "3.15.0"
 val weaverVersion = "0.13.1"
+val smithyTransformationsVersion = "1.2.0"
 
 val commonSettings = Seq(
   scalacOptions ++= Seq(
@@ -296,6 +298,74 @@ lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
     openapiOnModelPath,
   )
 
+/** The protocol's compliance tests: a Smithy model of an `@ndjsonRestJson` service whose operations
+  * carry `smithy.test` cases (`@httpRequestTests`, `@httpResponseTests`, `@eventStreamTests`), and
+  * nothing else.
+  *
+  * Published, plain Java with no Scala suffix, for the same reason as `protocol`: the cases
+  * describe the wire format, not this interpreter, so an implementation in any language can load
+  * them off its classpath and check itself against them — `alloy-protocol-tests` is the precedent.
+  * `complianceTests` below runs them against `NdjsonRestJsonBuilder`.
+  *
+  * alloy and the test traits are ordinary dependencies, not `Provided`: the model can't be loaded
+  * without either, so whoever reads it needs both on the same path.
+  */
+lazy val protocolTests = project
+  .in(file("modules/protocol-tests"))
+  .dependsOn(protocol)
+  .settings(
+    name := "smithy4s-ndjson-protocol-tests",
+    tlMimaPreviousVersions := Set.empty,
+    crossPaths := false,
+    autoScalaLibrary := false,
+    libraryDependencies ++= Seq(
+      "software.amazon.smithy" % "smithy-protocol-test-traits" % smithyVersion,
+      "com.disneystreaming.alloy" % "alloy-core" % alloyVersion,
+    ),
+  )
+
+/** Runs `protocolTests`' cases against `NdjsonRestJsonBuilder`, as the server they describe.
+  *
+  * Codegen reads the cases' model off `protocolTests`' jar, so the service under test is ordinary
+  * generated code, and `@httpRequestTests` / `@httpResponseTests` arrive as its hints
+  * (`smithy.test.*`, whose Scala classes come pre-generated in `smithy4s-compliance-tests`). Only
+  * the cases' own namespace is generated here.
+  *
+  * Unpublished, and JVM only: the cases are platform-independent data, and the interpreter is the
+  * same code on Native.
+  */
+lazy val complianceTests = project
+  .in(file("modules/compliance-tests"))
+  .enablePlugins(Smithy4sCodegenPlugin)
+  .disablePlugins(MimaPlugin)
+  .dependsOn(http4s.jvm)
+  .settings(
+    name := "smithy4s-ndjson-compliance-tests",
+    commonSettings,
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      "com.disneystreaming.smithy4s" %% "smithy4s-compliance-tests" % smithy4sVersion,
+      "software.amazon.smithy" % "smithy-protocol-test-traits" % smithyVersion % Smithy4s,
+      "org.typelevel" %% "weaver-cats" % weaverVersion % Test,
+    ),
+    buildTimeProtocolDependency,
+    Compile / smithy4sInternalDependenciesAsJars += (protocolTests / Compile / packageBin).value,
+    // Strips `@eventStreamTests` before codegen, which can't render them as hints — configured,
+    // and explained, in this module's `codegen.smithy`. The tests read those cases from the model.
+    libraryDependencies +=
+      "org.polyvariant.smithy-transformations" % "transformation" % smithyTransformationsVersion % Smithy4s,
+    Compile / smithy4sModelTransformers := List("removeTraits"),
+    Compile / smithy4sAllowedNamespaces := List("org.polyvariant.ndjson.compliance"),
+  )
+  // On the test classpath, so the model — `@eventStreamTests` included — can be loaded from it.
+  .dependsOn(protocolTests % Test)
+  .settings(
+    // Loaded alongside the cases, because Smithy requires a case's ID to be unique across every
+    // model loaded together: an implementation running alloy's suite too would otherwise fail to
+    // load both, which loading them here catches first.
+    libraryDependencies += "com.disneystreaming.alloy" % "alloy-protocol-tests" % alloyVersion % Test
+  )
+
 /** `protocol` is aggregated by the root, exactly as it was before the Native cross-build.
   *
   * `tlCrossRootProject.aggregate` takes cross-projects; a plain project goes through `.configure`,
@@ -312,8 +382,10 @@ lazy val testFixtures = crossProject(JVMPlatform, NativePlatform)
   * The Native modules see the trait regardless: it reaches their codegen through
   * `buildTimeProtocolDependency`, a direct classpath reference that needs no aggregation.
   *
-  * `openapi` is a plain Java project too, so it is attached the same way.
+  * `openapi` and `protocolTests` are plain Java projects too, so they are attached the same way. So
+  * is `complianceTests`, which means the Native job runs it a second time, on the JVM — the same
+  * trade as above, taken for the same reason.
   */
 lazy val root = tlCrossRootProject
   .aggregate(core, http4s, testFixtures)
-  .configure(_.aggregate(protocol, openapi))
+  .configure(_.aggregate(protocol, openapi, protocolTests, complianceTests))
