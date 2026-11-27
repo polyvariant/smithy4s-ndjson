@@ -195,7 +195,8 @@ stream is drained.
 **A late failure can't be an HTTP status.** The status is committed when the stream begins, so a
 mid-stream failure has to travel as a member of the output union (`failed`, by convention). Errors
 raised *before* streaming starts are still encoded normally: a declared error with the status from
-its `@httpError`, and a request that fails to decode with a 400, exactly as under `simpleRestJson`.
+its `@httpError`, and a request that fails to decode with a 400, exactly as under `simpleRestJson`
+— unless [mapped](#mapping-errors) first.
 
 **Request-scoped state is gone by the time the stream runs.** The body is drained after the handler
 returns, so an `IOLocal` set by middleware — the caller's identity, a tracing span — has already
@@ -206,10 +207,9 @@ inherent to streaming a response rather than a quirk of this interpreter, and it
 
 ## Middleware
 
-Cross-cutting concerns are deliberately not part of the protocol. Tracing, metrics, error mapping,
-authorization, rate limiting — all of it is applied on top as a `ServerEndpointMiddleware[F]`, the
-same type `SimpleRestJsonBuilder` takes, so middleware written for one builder works unchanged with
-the other:
+Cross-cutting concerns are deliberately not part of the protocol. Tracing, metrics, authorization,
+rate limiting — all of it is applied on top as a `ServerEndpointMiddleware[F]`, the same type
+`SimpleRestJsonBuilder` takes, so middleware written for one builder works unchanged with the other:
 
 ```scala
 NdjsonRestJsonBuilder.routes(impl, myMiddleware)
@@ -222,6 +222,26 @@ It wraps the handler of an endpoint that has *already matched*, never the routin
 so a request for an unknown path falls through untouched and these routes compose with others.
 Note the scope caveat above: middleware built on request-scoped state sees that state while the
 operation starts, but not while the response stream is drained.
+
+## Mapping errors
+
+Errors are encoded inside each endpoint, so middleware only ever sees the response a declared error,
+or a request that fails to decode, was answered with. To answer one differently — say, a request
+that fails to decode with an error of your own contract — map it before it is encoded, as
+`SimpleRestJsonBuilder.mapErrors` does:
+
+```scala
+NdjsonRestJsonBuilder.routes(
+  impl,
+  Endpoint.Middleware.noop,
+  { case error: HttpContractError => BadRequest(error.getMessage) },
+)
+```
+
+A mapped failure is then handled exactly as if it had been raised as mapped: encoded if the
+operation declares it, a 400 if it is an `HttpContractError`, and propagated to the middleware
+otherwise. A failure the mapping doesn't match is handled as it is. As with any error, this only
+reaches failures raised before the stream starts.
 
 ## OpenAPI
 

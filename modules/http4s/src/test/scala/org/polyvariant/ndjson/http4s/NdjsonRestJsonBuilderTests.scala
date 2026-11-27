@@ -19,6 +19,7 @@ package org.polyvariant.ndjson.http4s
 import cats.effect.IO
 import fs2.Stream
 import org.http4s.Header
+import org.http4s.HttpApp
 import org.http4s.Method
 import org.http4s.Request
 import org.http4s.Response
@@ -26,6 +27,8 @@ import org.http4s.Status
 import org.http4s.Uri
 import org.polyvariant.ndjson.test.*
 import org.typelevel.ci.CIString
+import smithy4s.Endpoint
+import smithy4s.http.HttpContractError
 import weaver.SimpleIOSuite
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -84,7 +87,7 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
       /** Raises the error named by the path label, so each declared error's `@httpError` status can
         * be checked; `boom` raises an undeclared one, which must NOT be encoded here.
         */
-      def fallible(which: String) =
+      def fallible(which: String, attempt: Option[Int]) =
         _ =>
           which match {
             case "missing"       => IO.raiseError(NotThere("no such thing", Some("a thing")))
@@ -202,6 +205,21 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
 
   private def run(request: Request[IO]): IO[Response[IO]] =
     routes.run(request).value.map(_.getOrElse(Response.notFound[IO]))
+
+  /** The same impl, with what the builder would otherwise answer itself mapped to errors `Fallible`
+    * declares: a request that fails to decode, and the undeclared failure `boom` raises.
+    */
+  private val mappedRoutes = NdjsonRestJsonBuilder.routes(
+    impl,
+    Endpoint.Middleware.noop[HttpApp[IO]],
+    {
+      case error: HttpContractError => Unprocessable(error.getMessage)
+      case error: RuntimeException if error.getMessage == "undeclared" => NotThere("mapped", None)
+    },
+  )
+
+  private def runMapped(request: Request[IO]): IO[Response[IO]] =
+    mappedRoutes.run(request).value.map(_.getOrElse(Response.notFound[IO]))
 
   private def bodyText(response: Response[IO]): IO[String] =
     response.body.through(fs2.text.utf8.decode).compile.string
@@ -565,6 +583,43 @@ object NdjsonRestJsonBuilderTests extends SimpleIOSuite {
         expect(response.status == Status.Ok) && expect(body == """{"ok":"fine"}""")
       }
     }
+  }
+
+  test("mapErrors maps a request that fails to decode to an error the operation declares") {
+    runMapped(Request[IO](Method.GET, Uri.unsafeFromString("/fallible/fine?attempt=twice")))
+      .flatMap { response =>
+        bodyText(response).map { body =>
+          expect(response.status == Status.UnprocessableContent) &&
+          expect(header(response, "X-Error-Type").contains("Unprocessable")) &&
+          expect(clue(body).contains("attempt"))
+        }
+      }
+  }
+
+  test("mapErrors maps a failure the impl raises before the stream starts, too") {
+    runMapped(Request[IO](Method.GET, Uri.unsafeFromString("/fallible/boom"))).flatMap { response =>
+      bodyText(response).map { body =>
+        expect(response.status == Status.NotFound) &&
+        expect(clue(body) == """{"message":"mapped"}""")
+      }
+    }
+  }
+
+  test("a failure mapErrors doesn't match is answered as without it") {
+    runMapped(Request[IO](Method.GET, Uri.unsafeFromString("/fallible/missing"))).flatMap {
+      response =>
+        bodyText(response).map { body =>
+          expect(response.status == Status.NotFound) &&
+          expect(clue(body) == """{"message":"no such thing"}""")
+        }
+    }
+  }
+
+  // `Greet` declares no errors, so the error it is mapped to is as undeclared as any other failure
+  test("a failure mapped to an error the operation doesn't declare propagates") {
+    runMapped(Request[IO](Method.GET, Uri.unsafeFromString("/greet/world?loud=maybe")))
+      .attempt
+      .map(result => expect(clue(result.left.toOption).exists(_.isInstanceOf[Unprocessable])))
   }
 
   /** The regression these traits were added for.

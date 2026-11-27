@@ -80,10 +80,9 @@ object NdjsonRestJsonBuilder {
 
   /** Builds routes for `impl`, with `middleware` applied per endpoint.
     *
-    * `middleware` is the only extension point, and it is deliberately the whole of it. Whatever a
-    * caller needs to wrap around an operation — tracing, metrics, error mapping, authorization,
-    * rate limiting — goes here, reading whatever it needs from the endpoint's own hints. The
-    * protocol itself knows about none of them.
+    * `middleware` is the extension point for whatever a caller needs to wrap around an operation —
+    * tracing, metrics, authorization, rate limiting — reading whatever it needs from the endpoint's
+    * own hints. The protocol itself knows about none of them.
     *
     * It is a `ServerEndpointMiddleware[F]` — the same type `SimpleRestJsonBuilder` takes — so
     * middleware written for one builder works unchanged with the other. As there, it wraps the
@@ -93,6 +92,27 @@ object NdjsonRestJsonBuilder {
   def routes[Alg[_[_, _, _, _, _]], F[_]: Concurrent](
     impl: Alg[WithStreamedIO[F]],
     middleware: ServerEndpointMiddleware[F] = Endpoint.Middleware.noop[HttpApp[F]],
+  )(
+    using service: Service[Alg]
+  ): HttpRoutes[F] = routes(impl, middleware, PartialFunction.empty)
+
+  /** Builds routes for `impl`, with `middleware` applied per endpoint, and a failure mapped by
+    * `mapErrors` before it is encoded — what `SimpleRestJsonBuilder.mapErrors` does.
+    *
+    * Errors are encoded inside the endpoint (see `encodeErrors`), so `middleware` only ever sees
+    * the response a declared error, or a request that fails to decode, was answered with. Answering
+    * either differently — say, a request that fails to decode with an error of the contract's own —
+    * therefore has to happen before that, here. A failure is mapped if `mapErrors` matches it, and
+    * then handled exactly as if it had been raised as mapped: encoded if the operation declares it,
+    * a 400 if it is an `HttpContractError`, and propagated to `middleware` otherwise.
+    *
+    * A separate overload rather than a third default parameter, so that the one above keeps its
+    * signature.
+    */
+  def routes[Alg[_[_, _, _, _, _]], F[_]: Concurrent](
+    impl: Alg[WithStreamedIO[F]],
+    middleware: ServerEndpointMiddleware[F],
+    mapErrors: PartialFunction[Throwable, Throwable],
   )(
     using service: Service[Alg]
   ): HttpRoutes[F] = {
@@ -110,7 +130,8 @@ object NdjsonRestJsonBuilder {
         .cast(endpoint.schema)
         .toOption
         .map { http =>
-          (http, one(endpoint, http, interpreter, codecs, middleware.prepare(service)(endpoint)))
+          val wrap = middleware.prepare(service)(endpoint)
+          (http, one(endpoint, http, interpreter, codecs, mapErrors, wrap))
         }
 
     // `moreSpecific` puts static segments ahead of greedy labels, so an endpoint that could only
@@ -134,6 +155,7 @@ object NdjsonRestJsonBuilder {
     http: HttpEndpoint[I],
     interpreter: PolyFunction5[Op, WithStreamedIO[F]],
     codecs: UnaryServerCodecs.Make[F, (Request[F], PathParams), Response[F]],
+    mapErrors: PartialFunction[Throwable, Throwable],
     wrap: HttpApp[F] => HttpApp[F],
   ): HttpRoutes[F] = {
     val run: I => WithStreamedIO[F][I, E, O, SI, SO] =
@@ -154,7 +176,7 @@ object NdjsonRestJsonBuilder {
               response <- encode(result._1, result._2)
             } yield response
 
-          encodeErrors(endpoint, operationCodecs, respond)
+          encodeErrors(endpoint, operationCodecs, mapErrors, respond)
         }
       )
 
@@ -179,6 +201,9 @@ object NdjsonRestJsonBuilder {
     * middleware still sees it and can turn it into a 500 itself. Swallowing it into a canned 500
     * here would hide server faults from exactly the layer that exists to observe them.
     *
+    * All of that applies to the failure as `mapErrors` maps it, when it matches: the caller's one
+    * chance to answer a failure differently, as the encoded response is all middleware gets to see.
+    *
     * This can only help a ''non-streaming'' failure. Once an operation has begun streaming, the
     * status is already committed and there is nowhere left to put an error; such failures have to
     * travel as a member of the output union instead (`failed`, by convention).
@@ -186,9 +211,12 @@ object NdjsonRestJsonBuilder {
   private def encodeErrors[Op[_, _, _, _, _], F[_]: Concurrent, I, E, O, SI, SO](
     endpoint: Endpoint[Op, I, E, O, SI, SO],
     codecs: UnaryServerCodecs[F, (Request[F], PathParams), Response[F], I, E, O],
+    mapErrors: PartialFunction[Throwable, Throwable],
     response: F[Response[F]],
   ): F[Response[F]] =
-    response.recoverWith { throwable =>
+    response.recoverWith { raised =>
+      val throwable = mapErrors.applyOrElse(raised, identity)
+
       endpoint
         .error
         .flatMap(_.liftError(throwable))
